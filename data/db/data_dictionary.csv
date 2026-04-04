@@ -1,0 +1,31 @@
+file,column,description
+banners.csv,banner_id,Уникальный идентификатор баннера
+banners.csv,brand,Бренд / рекламодатель
+banners.csv,category,Основная категория баннера
+banners.csv,subcategory,Подкатегория баннера
+banners.csv,banner_format,Формат: static / animated / video / native
+banners.csv,campaign_goal,Цель кампании
+banners.csv,target_gender,Целевой пол: M / F / U
+banners.csv,target_age_min,Минимальный возраст таргета
+banners.csv,target_age_max,Максимальный возраст таргета
+banners.csv,cpm_bid,Ставка CPM
+banners.csv,quality_score,Синтетическая оценка качества креатива
+banners.csv,created_at,Дата создания баннера
+banners.csv,is_active,Активен ли баннер
+users.csv,user_id,Уникальный идентификатор пользователя
+users.csv,age,Возраст
+users.csv,gender,Пол: M / F / U
+users.csv,city_tier,Размер города / сегмент
+users.csv,device_os,ОС устройства
+users.csv,platform,Платформа показа
+users.csv,income_band,Доходный сегмент
+users.csv,activity_segment,Активность пользователя
+users.csv,interest_1..3,Три основных интереса пользователя
+users.csv,signup_days_ago,Сколько дней назад зарегистрирован
+users.csv,is_premium,Премиум-сегмент
+banner_interactions.csv,event_date,Дата взаимодействия
+banner_interactions.csv,user_id,ID пользователя
+banner_interactions.csv,banner_id,ID баннера
+banner_interactions.csv,impressions,Количество показов за дату
+banner_interactions.csv,clicks,Количество кликов за дату
+banner_interactions.csv,ctr,CTR = clicks / impressions
