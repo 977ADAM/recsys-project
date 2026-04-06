@@ -1327,6 +1327,7 @@ dependencies = [
     { name = "numpy" },
     { name = "pandas" },
     { name = "scikit-learn" },
+    { name = "six" },
     { name = "streamlit" },
 ]
 
@@ -1336,6 +1337,7 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.4.4" },
     { name = "pandas", specifier = ">=3.0.2" },
     { name = "scikit-learn", specifier = ">=1.8.0" },
+    { name = "six", specifier = ">=1.17.0" },
     { name = "streamlit", specifier = ">=1.56.0" },
 ]
 
