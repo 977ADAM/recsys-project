@@ -86,10 +86,10 @@ FEATURE_COLS = [
     "user_banner_ctr_prior_impr",
 ]
 
-DEFAULT_INTERACTIONS = "/data/db/banner_interactions.csv"
+DEFAULT_INTERACTIONS = "data/db/banner_interactions.csv"
 DEFAULT_USERS = "data/db/users.csv"
 DEFAULT_BANNERS = "data/db/banners.csv"
-DEFAULT_ARTIFACTS = "data/db/ctr_artifacts_streamlit"
+DEFAULT_ARTIFACTS = "ctr_artifacts_streamlit"
 
 
 @st.cache_data(show_spinner=False)
@@ -340,7 +340,7 @@ def render_sidebar() -> dict:
     banners_csv = st.sidebar.text_input("banners.csv", DEFAULT_BANNERS)
     artifacts_dir = st.sidebar.text_input("Папка артефактов модели", DEFAULT_ARTIFACTS)
 
-    st.sidebar.caption("Можно оставить пути по умолчанию для ваших текущих файлов в /mnt/data.")
+    st.sidebar.caption("Можно оставить пути по умолчанию для ваших текущих файлов в /data/db.")
 
     return {
         "interactions_csv": interactions_csv,

@@ -70,7 +70,7 @@ def parse_args():
     parser.add_argument("--interactions-csv", required=True, default="./data/db/banner_interactions.csv")
     parser.add_argument("--users-csv", required=True, default="./data/db/users.csv")
     parser.add_argument("--banners-csv", required=True, default="./data/db/banners.csv")
-    parser.add_argument("--output-dir", required=True, default="ctr_artifacts")
+    parser.add_argument("--output-dir", required=True, default="str_artifacts")
     parser.add_argument("--valid-days", type=int, default=14)
     parser.add_argument("--iterations", type=int, default=400)
     parser.add_argument("--learning-rate", type=float, default=0.05)
