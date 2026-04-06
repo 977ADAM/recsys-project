@@ -18,7 +18,7 @@ APP_DIR = Path(__file__).resolve().parent
 if str(APP_DIR) not in sys.path:
     sys.path.insert(0, str(APP_DIR))
 
-from train import (  # noqa: E402
+from src.pipeline.train import (  # noqa: E402
     CAT_FEATURES,
     add_base_features,
     build_training_table,
@@ -27,7 +27,7 @@ from train import (  # noqa: E402
     ndcg_at_k,
     weighted_rmse,
 )
-from inference import (  # noqa: E402
+from src.pipeline.inference import (  # noqa: E402
     attach_recent_user_banner_history,
     load_history_tables,
     merge_history_features,
@@ -86,10 +86,10 @@ FEATURE_COLS = [
     "user_banner_ctr_prior_impr",
 ]
 
-DEFAULT_INTERACTIONS = "/mnt/data/banner_interactions.csv"
-DEFAULT_USERS = "/mnt/data/users.csv"
-DEFAULT_BANNERS = "/mnt/data/banners.csv"
-DEFAULT_ARTIFACTS = "/mnt/data/ctr_artifacts_streamlit"
+DEFAULT_INTERACTIONS = "/data/db/banner_interactions.csv"
+DEFAULT_USERS = "data/db/users.csv"
+DEFAULT_BANNERS = "data/db/banners.csv"
+DEFAULT_ARTIFACTS = "data/db/ctr_artifacts_streamlit"
 
 
 @st.cache_data(show_spinner=False)
