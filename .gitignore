@@ -3,3 +3,4 @@ __pycache__/
 *.pyd
 logs/
 *.log
+catboost_info/

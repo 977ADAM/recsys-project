@@ -1,9 +1,9 @@
 from catboost import CatBoostRegressor
 import pandas as pd
 
-banners = pd.read_csv(".../data/db/banners.csv", parse_dates=["created_at"])
-interactions = pd.read_csv(".../data/db/banner_interactions.csv", parse_dates=["event_date"])
-users = pd.read_csv(".../data/db/users.csv")
+banners = pd.read_csv("./data/db/banners.csv", parse_dates=["created_at"])
+interactions = pd.read_csv("./data/db/banner_interactions.csv", parse_dates=["event_date"])
+users = pd.read_csv("./data/db/users.csv")
 
 df = interactions.merge(users, on="user_id", how="left")
 df = df.merge(banners, on="banner_id", how="left")
@@ -68,7 +68,7 @@ model = CatBoostRegressor(
     learning_rate=0.05,
     depth=8,
     random_seed=42,
-    verbose=100
+    verbose=1
 )
 
 model.fit(
