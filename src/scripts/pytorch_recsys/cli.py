@@ -8,6 +8,7 @@ except ModuleNotFoundError as exc:
         "Install it first, then rerun this script."
     ) from exc
 
+from pytorch_recsys.artifacts import save_retrieval_artifacts
 from pytorch_recsys.config import parse_args
 from pytorch_recsys.data import (
     BPRDataset,
@@ -86,6 +87,18 @@ def main() -> None:
         k=config.k,
     )
     print_eval("test", test_result, config.k)
+
+    artifact_dir = save_retrieval_artifacts(
+        model=model,
+        user2idx=user2idx,
+        item2idx=item2idx,
+        idx2item=idx2item,
+        embedding_dim=config.embedding_dim,
+        output_dir=config.output_dir,
+        save_item_embeddings=config.save_item_embeddings,
+        device=device,
+    )
+    print(f"saved retrieval artifacts to: {artifact_dir}")
 
     sample_users = sorted(build_user_history(test_pairs).keys())[:3]
     if not sample_users:

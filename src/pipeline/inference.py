@@ -2,11 +2,19 @@
 #!/usr/bin/env python3
 import argparse
 import json
+import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 from catboost import CatBoostRegressor
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+SCRIPTS_DIR = PROJECT_ROOT / "src" / "scripts"
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
+
+from pytorch_recsys.inference import recommend_top_n
 
 
 def parse_args():
@@ -24,6 +32,17 @@ def parse_args():
     parser.add_argument("--score-mode", choices=["ctr", "value"], default="value")
     parser.add_argument("--only-active", action="store_true", default=False)
     parser.add_argument("--exclude-seen", action="store_true", default=False)
+    parser.add_argument(
+        "--retrieval-artifacts-dir",
+        default=None,
+        help="Optional. If set, use PyTorch retrieval to preselect candidate banners.",
+    )
+    parser.add_argument(
+        "--retrieval-top-n",
+        type=int,
+        default=100,
+        help="How many candidates to request from retrieval before CatBoost reranking.",
+    )
     parser.add_argument("--output-csv", default="recs_u_00001.csv")
     return parser.parse_args()
 
@@ -117,6 +136,41 @@ def attach_recent_user_banner_history(candidates, interactions_csv, user_id):
     return out
 
 
+def build_candidate_pool(args, user_df, banners, as_of_date):
+    if args.retrieval_artifacts_dir:
+        retrieved_banner_ids = recommend_top_n(
+            artifact_dir=args.retrieval_artifacts_dir,
+            user_id=args.user_id,
+            top_n=args.retrieval_top_n,
+            exclude_seen=args.exclude_seen,
+            interactions_csv=args.interactions_csv,
+        )
+
+        candidates = banners[banners["banner_id"].isin(retrieved_banner_ids)].copy()
+        if candidates.empty:
+            raise ValueError("Retrieval returned no candidate banners for reranking")
+
+        # Сохраняем retrieval-порядок, чтобы потом можно было использовать его как tie-breaker.
+        retrieval_rank = {
+            banner_id: rank for rank, banner_id in enumerate(retrieved_banner_ids, start=1)
+        }
+        candidates["retrieval_rank"] = candidates["banner_id"].map(retrieval_rank)
+        user_row = user_df.iloc[0]
+        for column in user_df.columns:
+            candidates[column] = user_row[column]
+        candidates["event_date"] = as_of_date
+        return candidates
+
+    # Fallback: старый режим, где ranker скорит все баннеры.
+    user_df = user_df.copy()
+    banners = banners.copy()
+    user_df["__k"] = 1
+    banners["__k"] = 1
+    candidates = banners.merge(user_df, on="__k", how="inner").drop(columns="__k")
+    candidates["event_date"] = as_of_date
+    return candidates
+
+
 def main():
     args = parse_args()
     artifacts_dir = Path(args.artifacts_dir)
@@ -139,11 +193,7 @@ def main():
     else:
         as_of_date = pd.Timestamp(metadata["latest_event_date"]) + pd.Timedelta(days=1)
 
-    # Cross join one user with all candidate banners.
-    user_df["__k"] = 1
-    banners["__k"] = 1
-    candidates = banners.merge(user_df, on="__k", how="inner").drop(columns="__k")
-    candidates["event_date"] = as_of_date
+    candidates = build_candidate_pool(args, user_df, banners, as_of_date)
 
     candidates = add_base_features(candidates)
 
@@ -151,7 +201,8 @@ def main():
     candidates = merge_history_features(candidates, history, metadata)
     candidates = attach_recent_user_banner_history(candidates, args.interactions_csv, args.user_id)
 
-    if args.exclude_seen:
+    # В fallback-режиме seen items фильтруем здесь; retrieval-режим умеет делать это раньше.
+    if args.exclude_seen and not args.retrieval_artifacts_dir:
         if args.interactions_csv is None:
             raise ValueError("--exclude-seen requires --interactions-csv")
         candidates = candidates[candidates["served_impressions_total"] == 0].copy()
@@ -211,7 +262,10 @@ def main():
     ]
 
     result = (
-        candidates.sort_values(["final_score", "pred_ctr"], ascending=False)
+        candidates.sort_values(
+            ["final_score", "pred_ctr", "retrieval_rank"] if "retrieval_rank" in candidates.columns else ["final_score", "pred_ctr"],
+            ascending=[False, False, True] if "retrieval_rank" in candidates.columns else [False, False],
+        )
         .head(args.top_k)[result_cols]
         .reset_index(drop=True)
     )

@@ -32,6 +32,7 @@ from src.pipeline.inference import (  # noqa: E402
     load_history_tables,
     merge_history_features,
 )
+from src.scripts.pytorch_recsys.inference import recommend_top_n  # noqa: E402
 
 FEATURE_COLS = [
     "user_id",
@@ -90,6 +91,7 @@ DEFAULT_INTERACTIONS = "data/db/banner_interactions.csv"
 DEFAULT_USERS = "data/db/users.csv"
 DEFAULT_BANNERS = "data/db/banners.csv"
 DEFAULT_ARTIFACTS = "ctr_artifacts_streamlit"
+DEFAULT_RETRIEVAL_ARTIFACTS = "artifacts/pytorch_retrieval"
 
 
 @st.cache_data(show_spinner=False)
@@ -239,12 +241,15 @@ def recommend_for_user(
     users_csv: str,
     banners_csv: str,
     artifacts_dir: str,
+    retrieval_artifacts_dir: Optional[str],
     interactions_csv: Optional[str],
     top_k: int,
+    retrieval_top_n: int,
     only_active: bool,
     exclude_seen: bool,
     score_mode: str,
     as_of_date: Optional[str],
+    candidate_mode: str,
 ) -> pd.DataFrame:
     metadata = load_metadata(artifacts_dir)
     users = load_users(users_csv)
@@ -262,10 +267,34 @@ def recommend_for_user(
     else:
         serve_date = pd.Timestamp(metadata["latest_event_date"]) + pd.Timedelta(days=1)
 
-    user_df["__k"] = 1
-    banners["__k"] = 1
-    candidates = banners.merge(user_df, on="__k", how="inner").drop(columns="__k")
-    candidates["event_date"] = serve_date
+    if candidate_mode == "retrieval + ranking":
+        if not retrieval_artifacts_dir:
+            raise ValueError("Для режима retrieval + ranking укажите папку retrieval-артефактов.")
+
+        retrieved_banner_ids = recommend_top_n(
+            artifact_dir=retrieval_artifacts_dir,
+            user_id=user_id,
+            top_n=retrieval_top_n,
+            exclude_seen=exclude_seen,
+            interactions_csv=interactions_csv,
+        )
+        candidates = banners[banners["banner_id"].isin(retrieved_banner_ids)].copy()
+        if candidates.empty:
+            raise ValueError("Retrieval не вернул кандидатов для ранжирования.")
+
+        retrieval_rank = {
+            banner_id: rank for rank, banner_id in enumerate(retrieved_banner_ids, start=1)
+        }
+        candidates["retrieval_rank"] = candidates["banner_id"].map(retrieval_rank)
+        user_row = user_df.iloc[0]
+        for column in user_df.columns:
+            candidates[column] = user_row[column]
+        candidates["event_date"] = serve_date
+    else:
+        user_df["__k"] = 1
+        banners["__k"] = 1
+        candidates = banners.merge(user_df, on="__k", how="inner").drop(columns="__k")
+        candidates["event_date"] = serve_date
 
     candidates = add_base_features(candidates)
     history = load_history_tables(artifacts_dir)
@@ -276,7 +305,7 @@ def recommend_for_user(
         if col not in candidates.columns:
             candidates[col] = 0
 
-    if exclude_seen:
+    if exclude_seen and candidate_mode == "all banners":
         candidates = candidates[candidates["served_impressions_total"] == 0].copy()
 
     candidates["fatigue_penalty"] = 1.0 / (1.0 + np.log1p(candidates["served_impressions_total"]))
@@ -326,7 +355,10 @@ def recommend_for_user(
     ]
 
     result = (
-        candidates.sort_values(["final_score", "pred_ctr"], ascending=False)
+        candidates.sort_values(
+            ["final_score", "pred_ctr", "retrieval_rank"] if "retrieval_rank" in candidates.columns else ["final_score", "pred_ctr"],
+            ascending=[False, False, True] if "retrieval_rank" in candidates.columns else [False, False],
+        )
         .head(top_k)[result_cols]
         .reset_index(drop=True)
     )
@@ -339,6 +371,10 @@ def render_sidebar() -> dict:
     users_csv = st.sidebar.text_input("users.csv", DEFAULT_USERS)
     banners_csv = st.sidebar.text_input("banners.csv", DEFAULT_BANNERS)
     artifacts_dir = st.sidebar.text_input("Папка артефактов модели", DEFAULT_ARTIFACTS)
+    retrieval_artifacts_dir = st.sidebar.text_input(
+        "Папка retrieval-артефактов",
+        DEFAULT_RETRIEVAL_ARTIFACTS,
+    )
 
     st.sidebar.caption("Можно оставить пути по умолчанию для ваших текущих файлов в /data/db.")
 
@@ -347,6 +383,7 @@ def render_sidebar() -> dict:
         "users_csv": users_csv,
         "banners_csv": banners_csv,
         "artifacts_dir": artifacts_dir,
+        "retrieval_artifacts_dir": retrieval_artifacts_dir,
     }
 
 
@@ -434,6 +471,23 @@ def recommend_tab(cfg: dict) -> None:
     with c6:
         as_of_date = st.text_input("Дата показа (YYYY-MM-DD), optional", value="")
 
+    c7, c8 = st.columns(2)
+    with c7:
+        candidate_mode = st.radio(
+            "Режим кандидатов",
+            options=["all banners", "retrieval + ranking"],
+            horizontal=True,
+        )
+    with c8:
+        retrieval_top_n = st.number_input(
+            "retrieval_top_n",
+            min_value=10,
+            max_value=1000,
+            value=100,
+            step=10,
+            disabled=candidate_mode != "retrieval + ranking",
+        )
+
     if st.button("Построить рекомендации"):
         with st.spinner("Считаю рекомендации..."):
             recs = recommend_for_user(
@@ -441,12 +495,15 @@ def recommend_tab(cfg: dict) -> None:
                 users_csv=cfg["users_csv"],
                 banners_csv=cfg["banners_csv"],
                 artifacts_dir=cfg["artifacts_dir"],
+                retrieval_artifacts_dir=cfg["retrieval_artifacts_dir"],
                 interactions_csv=cfg["interactions_csv"],
                 top_k=int(top_k),
+                retrieval_top_n=int(retrieval_top_n),
                 only_active=only_active,
                 exclude_seen=exclude_seen,
                 score_mode=score_mode,
                 as_of_date=as_of_date or None,
+                candidate_mode=candidate_mode,
             )
 
         st.dataframe(recs, use_container_width=True, hide_index=True)

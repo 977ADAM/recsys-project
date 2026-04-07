@@ -19,6 +19,8 @@ class TrainConfig:
     weight_decay: float
     k: int
     seed: int
+    output_dir: str
+    save_item_embeddings: bool
 
 
 def parse_args() -> TrainConfig:
@@ -34,6 +36,8 @@ def parse_args() -> TrainConfig:
     parser.add_argument("--weight-decay", type=float, default=1e-5)
     parser.add_argument("--k", type=int, default=100)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--output-dir", type=str, default="artifacts/pytorch_retrieval")
+    parser.add_argument("--save-item-embeddings", action="store_true")
     args = parser.parse_args()
     return TrainConfig(
         epochs=args.epochs,
@@ -43,4 +47,6 @@ def parse_args() -> TrainConfig:
         weight_decay=args.weight_decay,
         k=args.k,
         seed=args.seed,
+        output_dir=args.output_dir,
+        save_item_embeddings=args.save_item_embeddings,
     )
