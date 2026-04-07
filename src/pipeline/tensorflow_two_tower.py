@@ -1,5 +1,4 @@
 import tensorflow as tf
-from tensorflow import keras
 import tensorflow_recommenders as tfrs
 import numpy as np
 
@@ -34,7 +33,7 @@ embedding_dim = 64
 class UserModel(tf.keras.Model):
     def __init__(self, user_vocab):
         super().__init__()
-        self.lookup = keras.layers.StringLookup(
+        self.lookup = tf.keras.layers.StringLookup(
             vocabulary=user_vocab, mask_token=None
         )
         self.embedding = tf.keras.layers.Embedding(
@@ -86,11 +85,11 @@ class CandidateGenerationModel(tfrs.models.Model):
         self.item_model = ItemModel(item_vocab)
 
         self.task = tfrs.tasks.Retrieval(
-            metrics=tfrs.metrics.FactorizedTopK(
-                candidates=items_dataset.batch(1024).map(
-                    lambda x: (x, self.item_model(x))
-                )
-            ),
+            # metrics=tfrs.metrics.FactorizedTopK(
+            #     candidates=items_dataset.batch(1024).map(
+            #         lambda x: (x, self.item_model(x))
+            #     )
+            # ),
             num_hard_negatives=50,
             remove_accidental_hits=True,
         )

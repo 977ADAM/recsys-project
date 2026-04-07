@@ -16,4 +16,10 @@ dependencies = [
     "tensorflow>=2.21.0",
     "tensorflow-datasets>=4.9.9",
     "tensorflow-recommenders>=0.7.2",
+    "torch>=2.11.0",
+    "torchaudio>=2.11.0",
+    "torchvision>=0.26.0",
 ]
+
+[[tool.uv.index]]
+url = "https://pytorch.org/"
