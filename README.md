@@ -11,9 +11,6 @@
 - [src/pipeline/inference.py](/home/adam/projects/recsys-project/src/pipeline/inference.py)
 - [src/scripts/pytorch_recsys](/home/adam/projects/recsys-project/src/scripts/pytorch_recsys)
 
-Старый book-recsys код вынесен в архив:
-- [src/legacy_book_recsys](/home/adam/projects/recsys-project/src/legacy_book_recsys)
-
 ## Что делает проект
 
 Проект обучает и использует две модели:
@@ -177,4 +174,3 @@ python main.py recommend \
 
 - Системный `python` может не содержать нужные зависимости, поэтому лучше использовать `.venv`
 - Если хочешь использовать режим `retrieval + ranking`, retrieval-артефакты должны быть заранее обучены и сохранены
-- Legacy book-recsys код не участвует в активном pipeline
