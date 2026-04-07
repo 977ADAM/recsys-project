@@ -3,7 +3,7 @@ name = "recsys-project"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.11.9"
 dependencies = [
     "catboost>=1.2.10",
     "implicit>=0.7.2",
@@ -13,4 +13,5 @@ dependencies = [
     "scikit-learn>=1.8.0",
     "six>=1.17.0",
     "streamlit>=1.56.0",
+    "tensorflow>=2.21.0",
 ]
