@@ -6,3 +6,4 @@ logs/
 catboost_info/
 ctr_artifacts/
 ctr_artifacts_streamlit/
+.codex
