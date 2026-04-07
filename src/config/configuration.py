@@ -3,7 +3,7 @@ import sys
 from src.core.logging.logger import logging
 from src.utils.util import read_yaml_file
 from src.core.errors.exception_handler import AppException
-from src.scripts.config_entity import DataIngestionConfig, DataValidationConfig, DataTransformationConfig, ModelTrainerConfig, ModelRecommendationConfig
+from scripts.pytorch import DataIngestionConfig, DataValidationConfig, DataTransformationConfig, ModelTrainerConfig, ModelRecommendationConfig
 
 CONFIG_FILE_PATH = "config/config.yaml"
 
