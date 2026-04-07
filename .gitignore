@@ -1,9 +1,2 @@
 __pycache__/
-*.pyc
-*.pyd
-logs/
-*.log
-catboost_info/
-ctr_artifacts/
-ctr_artifacts_streamlit/
-.codex
+*.py[cod]

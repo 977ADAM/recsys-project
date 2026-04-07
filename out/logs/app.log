@@ -1,0 +1,2 @@
+2026-04-06 13:52:49 | INFO     | recsys | 114379:MainThread | logger.py:115 | Logging configured
+2026-04-06 13:52:49 | ERROR    | __main__ | 114379:MainThread | main.py:11 | An error occurred: division by zero

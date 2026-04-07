@@ -6,19 +6,12 @@ readme = "README.md"
 requires-python = ">=3.11.9"
 dependencies = [
     "catboost>=1.2.10",
-    "implicit>=0.7.2",
     "jupyter>=1.1.1",
     "numpy>=2.4.4",
     "pandas>=3.0.2",
     "scikit-learn>=1.8.0",
-    "six>=1.17.0",
     "streamlit>=1.56.0",
-    "tensorflow>=2.21.0",
-    "tensorflow-datasets>=4.9.9",
-    "tensorflow-recommenders>=0.7.2",
     "torch>=2.11.0",
-    "torchaudio>=2.11.0",
-    "torchvision>=0.26.0",
 ]
 
 [[tool.uv.index]]
