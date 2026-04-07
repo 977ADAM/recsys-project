@@ -14,4 +14,6 @@ dependencies = [
     "six>=1.17.0",
     "streamlit>=1.56.0",
     "tensorflow>=2.21.0",
+    "tensorflow-datasets>=4.9.9",
+    "tensorflow-recommenders>=0.7.2",
 ]

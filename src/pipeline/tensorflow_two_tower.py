@@ -1,4 +1,5 @@
 import tensorflow as tf
+from tensorflow import keras
 import tensorflow_recommenders as tfrs
 import numpy as np
 
@@ -33,7 +34,7 @@ embedding_dim = 64
 class UserModel(tf.keras.Model):
     def __init__(self, user_vocab):
         super().__init__()
-        self.lookup = tf.keras.layers.StringLookup(
+        self.lookup = keras.layers.StringLookup(
             vocabulary=user_vocab, mask_token=None
         )
         self.embedding = tf.keras.layers.Embedding(
