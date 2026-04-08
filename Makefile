@@ -15,6 +15,8 @@ deepfmrun:
 infra-up:
 	docker compose up -d redis postgres
 
+postgres-up:
+	docker compose up -d postgres
 
 api-up:
 	docker compose up -d api
