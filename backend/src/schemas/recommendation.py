@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 class RecommendationRequest(BaseModel):
     user_id: str = Field(..., description="Identifier of the user to recommend banners for.")
+    session_id: str | None = Field(default=None, description="Optional current session identifier.")
     top_k: int = Field(default=10, ge=1, le=100)
     score_mode: Literal["ctr", "value"] = "ctr"
     only_active: bool = True
@@ -44,6 +45,6 @@ class RecommendationResponse(BaseModel):
     model_type: str
     artifacts_dir: str
     retrieval_used: bool
+    online_state_applied: bool
     top_k: int
     items: list[RecommendationItem]
-
