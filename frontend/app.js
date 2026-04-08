@@ -241,7 +241,6 @@ const placementBlueprint = [
 const state = {
   response: DEMO_RESPONSE,
   source: "demo",
-  lastError: "",
 };
 
 const elements = {
@@ -252,7 +251,6 @@ const elements = {
   candidateMode: document.querySelector("#candidate-mode"),
   scoreMode: document.querySelector("#score-mode"),
   retrievalTopN: document.querySelector("#retrieval-top-n"),
-  endpoint: document.querySelector("#recommendation-endpoint"),
   onlyActive: document.querySelector("#only-active"),
   excludeSeen: document.querySelector("#exclude-seen"),
   heroStory: document.querySelector("#hero-story"),
@@ -315,6 +313,31 @@ function buildRequestPayload() {
     retrieval_top_n: Number(elements.retrievalTopN.value),
     only_active: elements.onlyActive.checked,
     exclude_seen: elements.excludeSeen.checked,
+  };
+}
+
+function hashUserId(userId) {
+  return Array.from(String(userId || ""))
+    .reduce((sum, char, index) => sum + char.charCodeAt(0) * (index + 1), 0);
+}
+
+function buildLocalResponse(payload) {
+  const sourceItems = [...DEMO_RESPONSE.items];
+  const offset = sourceItems.length === 0 ? 0 : hashUserId(payload.user_id) % sourceItems.length;
+  const rotatedItems = sourceItems.map((_, index) => sourceItems[(index + offset) % sourceItems.length]);
+  const sortKey = payload.score_mode === "ctr" ? "pred_ctr" : "final_score";
+  const sortedItems = [...rotatedItems].sort((left, right) => Number(right[sortKey]) - Number(left[sortKey]));
+  const activeItems = payload.only_active ? sortedItems.filter((item) => item.is_active === 1) : sortedItems;
+  const limit = Math.max(1, Number(payload.top_k) || DEMO_RESPONSE.top_k);
+  const items = activeItems.slice(0, limit);
+
+  return {
+    model_type: "local-demo-feed",
+    artifacts_dir: "frontend-local",
+    retrieval_used: payload.candidate_mode === "retrieval + ranking",
+    online_state_applied: false,
+    top_k: items.length,
+    items,
   };
 }
 
@@ -490,7 +513,7 @@ function renderMeta(response) {
   const items = [
     {
       label: "Источник",
-      value: state.source === "api" ? "live API" : "demo fallback",
+      value: state.source === "local" ? "local showcase" : "demo fallback",
     },
     {
       label: "Модель",
@@ -517,8 +540,8 @@ function renderMeta(response) {
       value: String(response.items.length),
     },
     {
-      label: "Последняя ошибка",
-      value: state.lastError || "none",
+      label: "Режим",
+      value: "без inference_service",
     },
   ];
 
@@ -586,42 +609,15 @@ function render(response, requestPayload) {
   renderMidroll(items);
 }
 
-async function loadRecommendations() {
+function loadRecommendations() {
   const payload = buildRequestPayload();
-  const endpoint = elements.endpoint.value.trim() || "/api/v1/recommendations";
 
-  setStatus("API loading", "");
   elements.refreshButton.disabled = true;
-
-  try {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
-
-    if (!response.ok) {
-      const message = await response.text();
-      throw new Error(message || `HTTP ${response.status}`);
-    }
-
-    const data = await response.json();
-    state.response = data;
-    state.source = "api";
-    state.lastError = "";
-    setStatus("API live", "ok");
-    render(data, payload);
-  } catch (error) {
-    state.response = DEMO_RESPONSE;
-    state.source = "demo";
-    state.lastError = String(error.message || error);
-    setStatus("Demo fallback", "demo");
-    render(DEMO_RESPONSE, payload);
-  } finally {
-    elements.refreshButton.disabled = false;
-  }
+  state.response = buildLocalResponse(payload);
+  state.source = "local";
+  setStatus("Local mode", "demo");
+  render(state.response, payload);
+  elements.refreshButton.disabled = false;
 }
 
 function activateQuickUsers() {
@@ -644,11 +640,7 @@ function bindEvents() {
   });
 
   elements.demoButton.addEventListener("click", () => {
-    state.response = DEMO_RESPONSE;
-    state.source = "demo";
-    state.lastError = "";
-    setStatus("Demo mode", "demo");
-    render(DEMO_RESPONSE, buildRequestPayload());
+    loadRecommendations();
   });
 
   activateQuickUsers();
@@ -656,5 +648,5 @@ function bindEvents() {
 
 bindEvents();
 renderPlacements();
-render(DEMO_RESPONSE, buildRequestPayload());
+render(buildLocalResponse(buildRequestPayload()), buildRequestPayload());
 loadRecommendations();

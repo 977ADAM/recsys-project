@@ -27,13 +27,8 @@ postgres-up:
 api-up:
 	docker compose up --build api
 
-
-inference-up:
-	docker compose up -d inference
-
-
 stack-up:
-	docker compose up -d api inference redis postgres
+	docker compose up -d api redis postgres
 
 
 infra-down:
@@ -45,15 +40,11 @@ infra-ps:
 
 
 infra-logs:
-	docker compose logs -f api inference redis postgres
+	docker compose logs -f api redis postgres
 
 
 api-logs:
 	docker compose logs -f api
-
-
-inference-logs:
-	docker compose logs -f inference
 
 
 redis-logs:

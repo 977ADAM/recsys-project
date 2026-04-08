@@ -6,7 +6,7 @@
     <title>Pulse Ledger</title>
     <meta
       name="description"
-      content="Новостной frontend для recommendation API с рекламными слотами и нативными баннерными вставками."
+      content="Новостной frontend-витрина с рекламными слотами и нативными баннерными вставками."
     />
     <link rel="stylesheet" href="./styles.css" />
     <script src="./app.js" defer></script>
@@ -16,14 +16,14 @@
       <header class="site-header">
         <div class="topline">
           <span>Персонализированная редакция</span>
-          <span id="api-status" class="status-chip">API checking</span>
+          <span id="api-status" class="status-chip">Local mode</span>
         </div>
         <div class="masthead">
           <div>
             <p class="eyebrow">Newsroom UI for Recsys</p>
             <h1>Pulse Ledger</h1>
             <p class="subtitle">
-              Новостная витрина для вашего recommendation API: лента, партнерские материалы и
+              Новостная витрина для баннерного проекта: лента, партнерские материалы и
               готовые места под размещение баннеров.
             </p>
           </div>
@@ -32,7 +32,7 @@
               Обновить ленту
             </button>
             <button id="demo-button" class="button button-secondary" type="button">
-              Демо-режим
+              Пересобрать ленту
             </button>
           </div>
         </div>
@@ -53,7 +53,7 @@
               <p class="kicker">Control Desk</p>
               <h2>Настройки запроса</h2>
             </div>
-            <p class="section-note">Фронтенд по умолчанию ходит в backend proxy `/api/v1/recommendations`.</p>
+            <p class="section-note">Сейчас витрина работает автономно, без `inference_service`, и собирает ленту локально.</p>
           </div>
 
           <form id="controls-form" class="controls-grid">
@@ -83,10 +83,6 @@
               <span>Retrieval top N</span>
               <input id="retrieval-top-n" name="retrievalTopN" type="number" min="10" max="300" value="60" />
             </label>
-            <label>
-              <span>Endpoint</span>
-              <input id="recommendation-endpoint" name="endpoint" type="text" value="/api/v1/recommendations" />
-            </label>
             <label class="toggle">
               <input id="only-active" name="onlyActive" type="checkbox" checked />
               <span>Только активные баннеры</span>
@@ -96,7 +92,7 @@
               <span>Скрывать уже показанные</span>
             </label>
             <div class="controls-actions">
-              <button class="button button-primary" type="submit">Загрузить из API</button>
+              <button class="button button-primary" type="submit">Обновить витрину</button>
             </div>
           </form>
 

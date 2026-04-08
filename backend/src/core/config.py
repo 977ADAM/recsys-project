@@ -11,7 +11,6 @@ class Settings:
     app_name: str
     api_v1_prefix: str
     database_url: str
-    inference_url: str
     interactions_csv: str
     users_csv: str
     banners_csv: str
@@ -31,7 +30,6 @@ def get_settings() -> Settings:
             "DATABASE_URL",
             "postgresql+psycopg://recsys:recsys@localhost:5433/recsys",
         ),
-        inference_url=os.getenv("INFERENCE_URL", "http://localhost:8001"),
         interactions_csv=os.getenv("INTERACTIONS_CSV", "data/db/banner_interactions.csv"),
         users_csv=os.getenv("USERS_CSV", "data/db/users.csv"),
         banners_csv=os.getenv("BANNERS_CSV", "data/db/banners.csv"),
