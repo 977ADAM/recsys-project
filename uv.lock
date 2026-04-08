@@ -2958,32 +2958,17 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
-    { name = "psycopg" },
-    { name = "pyyaml" },
-]
-
-[package.optional-dependencies]
-api = [
+    { name = "catboost" },
     { name = "fastapi", extra = ["standard"] },
     { name = "httpx" },
-    { name = "psycopg", extra = ["binary"] },
-    { name = "redis" },
-    { name = "sqlalchemy" },
-]
-inference = [
-    { name = "catboost" },
-    { name = "fastapi", extra = ["standard"] },
-    { name = "numpy" },
-    { name = "pandas" },
-    { name = "scikit-learn" },
-    { name = "torch" },
-]
-train = [
-    { name = "catboost" },
     { name = "jupyter" },
     { name = "numpy" },
     { name = "pandas" },
+    { name = "psycopg", extra = ["binary"] },
+    { name = "pyyaml" },
+    { name = "redis" },
     { name = "scikit-learn" },
+    { name = "sqlalchemy" },
     { name = "streamlit" },
     { name = "torch" },
 ]
@@ -2991,28 +2976,21 @@ train = [
 [package.metadata]
 requires-dist = [
     { name = "alembic", specifier = ">=1.18.4" },
-    { name = "catboost", marker = "extra == 'inference'", specifier = ">=1.2.10" },
-    { name = "catboost", marker = "extra == 'train'", specifier = ">=1.2.10" },
-    { name = "fastapi", extras = ["standard"], marker = "extra == 'api'", specifier = ">=0.135.3" },
-    { name = "fastapi", extras = ["standard"], marker = "extra == 'inference'", specifier = ">=0.135.3" },
-    { name = "httpx", marker = "extra == 'api'", specifier = ">=0.28.1" },
-    { name = "jupyter", marker = "extra == 'train'", specifier = ">=1.1.1" },
-    { name = "numpy", marker = "extra == 'inference'", specifier = ">=2.4.4" },
-    { name = "numpy", marker = "extra == 'train'", specifier = ">=2.4.4" },
-    { name = "pandas", marker = "extra == 'inference'", specifier = ">=3.0.2" },
-    { name = "pandas", marker = "extra == 'train'", specifier = ">=3.0.2" },
+    { name = "catboost", specifier = ">=1.2.10" },
+    { name = "fastapi", extras = ["standard"], specifier = ">=0.135.3" },
+    { name = "httpx", specifier = ">=0.28.1" },
+    { name = "jupyter", specifier = ">=1.1.1" },
+    { name = "numpy", specifier = ">=2.4.4" },
+    { name = "pandas", specifier = ">=3.0.2" },
     { name = "psycopg", specifier = ">=3.3.3" },
-    { name = "psycopg", extras = ["binary"], marker = "extra == 'api'", specifier = ">=3.2.9" },
+    { name = "psycopg", extras = ["binary"], specifier = ">=3.2.9" },
     { name = "pyyaml", specifier = ">=6.0.2" },
-    { name = "redis", marker = "extra == 'api'", specifier = ">=6.4.0" },
-    { name = "scikit-learn", marker = "extra == 'inference'", specifier = ">=1.8.0" },
-    { name = "scikit-learn", marker = "extra == 'train'", specifier = ">=1.8.0" },
-    { name = "sqlalchemy", marker = "extra == 'api'", specifier = ">=2.0.43" },
-    { name = "streamlit", marker = "extra == 'train'", specifier = ">=1.56.0" },
-    { name = "torch", marker = "extra == 'inference'", specifier = ">=2.11.0" },
-    { name = "torch", marker = "extra == 'train'", specifier = ">=2.11.0" },
+    { name = "redis", specifier = ">=6.4.0" },
+    { name = "scikit-learn", specifier = ">=1.8.0" },
+    { name = "sqlalchemy", specifier = ">=2.0.43" },
+    { name = "streamlit", specifier = ">=1.56.0" },
+    { name = "torch", specifier = ">=2.11.0" },
 ]
-provides-extras = ["api", "inference", "train"]
 
 [[package]]
 name = "redis"
