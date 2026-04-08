@@ -1,0 +1,8 @@
+{
+  "embedding_dim": 64,
+  "num_users": 5000,
+  "num_items": 300,
+  "files": {
+    "checkpoint": "retrieval_model.pt"
+  }
+}

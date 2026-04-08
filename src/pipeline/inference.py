@@ -14,8 +14,7 @@ SCRIPTS_DIR = PROJECT_ROOT / "src" / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
-from pytorch_recsys.inference import recommend_top_n
-
+from src.scripts.pytorch_recsys.inference import recommend_top_n
 
 def parse_args():
     parser = argparse.ArgumentParser(

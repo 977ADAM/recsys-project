@@ -10,8 +10,11 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 import streamlit as st
+import torch
 from catboost import CatBoostRegressor
 from sklearn.metrics import mean_squared_error
+from sklearn.preprocessing import StandardScaler
+from torch.utils.data import DataLoader
 
 # Make sibling modules importable when the app is launched from another cwd.
 APP_DIR = Path(__file__).resolve().parent
@@ -32,6 +35,7 @@ from src.pipeline.inference import (  # noqa: E402
     load_history_tables,
     merge_history_features,
 )
+from src.pipeline.deepfm import train_deepfm as deepfm_pipeline  # noqa: E402
 from src.scripts.pytorch_recsys.inference import recommend_top_n  # noqa: E402
 
 FEATURE_COLS = [
@@ -91,7 +95,47 @@ DEFAULT_INTERACTIONS = "data/db/banner_interactions.csv"
 DEFAULT_USERS = "data/db/users.csv"
 DEFAULT_BANNERS = "data/db/banners.csv"
 DEFAULT_ARTIFACTS = "ctr_artifacts_streamlit"
+DEFAULT_DEEPFM_ARTIFACTS = "deepfm_artifacts"
 DEFAULT_RETRIEVAL_ARTIFACTS = "artifacts/pytorch_retrieval"
+ARTIFACT_PRESETS = {
+    "deepfm": DEFAULT_DEEPFM_ARTIFACTS,
+    "catboost": DEFAULT_ARTIFACTS,
+    "custom": "",
+}
+
+
+def infer_artifact_preset(artifacts_dir: str) -> str:
+    if artifacts_dir == DEFAULT_DEEPFM_ARTIFACTS:
+        return "deepfm"
+    if artifacts_dir == DEFAULT_ARTIFACTS:
+        return "catboost"
+    return "custom"
+
+
+def set_active_artifacts_dir(artifacts_dir: str) -> None:
+    st.session_state["artifacts_dir_input"] = artifacts_dir
+    st.session_state["artifact_preset"] = infer_artifact_preset(artifacts_dir)
+
+
+def request_active_artifacts_dir(artifacts_dir: str) -> None:
+    st.session_state["pending_artifacts_dir"] = artifacts_dir
+
+
+def apply_pending_artifacts_dir() -> None:
+    pending_artifacts_dir = st.session_state.pop("pending_artifacts_dir", None)
+    if pending_artifacts_dir is not None:
+        set_active_artifacts_dir(pending_artifacts_dir)
+
+
+def sync_artifact_preset() -> None:
+    preset = st.session_state.get("artifact_preset", "deepfm")
+    if preset != "custom":
+        st.session_state["artifacts_dir_input"] = ARTIFACT_PRESETS[preset]
+
+
+def sync_artifact_dir() -> None:
+    artifacts_dir = st.session_state.get("artifacts_dir_input", DEFAULT_DEEPFM_ARTIFACTS)
+    st.session_state["artifact_preset"] = infer_artifact_preset(artifacts_dir)
 
 
 @st.cache_data(show_spinner=False)
@@ -123,7 +167,11 @@ def load_metadata(artifacts_dir: str) -> dict:
         return json.load(f)
 
 
-def train_model(
+def resolve_model_type(metadata: dict) -> str:
+    return str(metadata.get("model_type", "catboost")).lower()
+
+
+def train_catboost_model(
     interactions_csv: str,
     users_csv: str,
     banners_csv: str,
@@ -229,11 +277,259 @@ def train_model(
     return metrics, output_path
 
 
+def train_deepfm_model(
+    interactions_csv: str,
+    users_csv: str,
+    banners_csv: str,
+    output_dir: str,
+    valid_days: int,
+    epochs: int,
+    batch_size: int,
+    learning_rate: float,
+    weight_decay: float,
+    dropout: float,
+    hidden_dims: str,
+    emb_dim: int,
+    patience: int,
+    random_seed: int,
+    device_name: str,
+) -> tuple[dict, Path]:
+    deepfm_pipeline.set_seed(random_seed)
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    hidden_dims_list = deepfm_pipeline.parse_hidden_dims(hidden_dims)
+    device = torch.device(device_name if device_name != "auto" else ("cuda" if torch.cuda.is_available() else "cpu"))
+
+    df = deepfm_pipeline.load_data(interactions_csv, users_csv, banners_csv)
+    df = deepfm_pipeline.add_base_features(df)
+    df, global_ctr, _ = deepfm_pipeline.build_training_table(df)
+    df = deepfm_pipeline.fill_dense_na(df, deepfm_pipeline.DENSE_FEATURES)
+
+    max_date = df["event_date"].max()
+    valid_start = max_date - pd.Timedelta(days=valid_days - 1)
+    train_df = df[df["event_date"] < valid_start].copy()
+    valid_df = df[df["event_date"] >= valid_start].copy()
+
+    if train_df.empty or valid_df.empty:
+        raise ValueError(f"Time split produced an empty dataset. valid_start={valid_start.date()}")
+
+    vocabs = {feat: deepfm_pipeline.build_vocab(train_df[feat]) for feat in deepfm_pipeline.CAT_FEATURES}
+    cat_cardinalities = {feat: len(vocab) for feat, vocab in vocabs.items()}
+
+    scaler = StandardScaler()
+    train_dense = scaler.fit_transform(train_df[deepfm_pipeline.DENSE_FEATURES].astype(np.float32))
+    valid_dense = scaler.transform(valid_df[deepfm_pipeline.DENSE_FEATURES].astype(np.float32))
+    train_cat = deepfm_pipeline.encode_categorical_frame(train_df, vocabs, deepfm_pipeline.CAT_FEATURES)
+    valid_cat = deepfm_pipeline.encode_categorical_frame(valid_df, vocabs, deepfm_pipeline.CAT_FEATURES)
+
+    train_ds = deepfm_pipeline.TabularDataset(
+        train_cat,
+        train_dense,
+        train_df["clicks"].to_numpy(dtype=np.float32),
+        train_df["impressions"].to_numpy(dtype=np.float32),
+    )
+    valid_ds = deepfm_pipeline.TabularDataset(
+        valid_cat,
+        valid_dense,
+        valid_df["clicks"].to_numpy(dtype=np.float32),
+        valid_df["impressions"].to_numpy(dtype=np.float32),
+    )
+    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=0)
+    valid_loader = DataLoader(valid_ds, batch_size=batch_size, shuffle=False, num_workers=0)
+
+    model = deepfm_pipeline.DeepFM(
+        cat_cardinalities=cat_cardinalities,
+        dense_dim=len(deepfm_pipeline.DENSE_FEATURES),
+        hidden_dims=hidden_dims_list,
+        dropout=dropout,
+        emb_dim=emb_dim,
+    ).to(device)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+
+    best_state = None
+    best_valid_loss = float("inf")
+    best_epoch = -1
+    patience_left = patience
+
+    for epoch in range(1, epochs + 1):
+        model.train()
+        for cat_x, dense_x, clicks, impressions in train_loader:
+            cat_x = cat_x.to(device)
+            dense_x = dense_x.to(device)
+            clicks = clicks.to(device)
+            impressions = impressions.to(device)
+            optimizer.zero_grad()
+            logits = model(cat_x, dense_x)
+            loss = deepfm_pipeline.aggregated_logloss_from_logits(logits, clicks, impressions)
+            loss.backward()
+            optimizer.step()
+
+        model.eval()
+        valid_loss_sum = 0.0
+        valid_impr_sum = 0.0
+        with torch.no_grad():
+            for cat_x, dense_x, clicks, impressions in valid_loader:
+                cat_x = cat_x.to(device)
+                dense_x = dense_x.to(device)
+                clicks = clicks.to(device)
+                impressions = impressions.to(device)
+                logits = model(cat_x, dense_x)
+                loss = deepfm_pipeline.aggregated_logloss_from_logits(logits, clicks, impressions)
+                batch_impr = impressions.sum().item()
+                valid_loss_sum += loss.item() * batch_impr
+                valid_impr_sum += batch_impr
+        valid_logloss = valid_loss_sum / max(valid_impr_sum, 1.0)
+
+        if valid_logloss < best_valid_loss:
+            best_valid_loss = valid_logloss
+            best_epoch = epoch
+            best_state = {key: value.detach().cpu().clone() for key, value in model.state_dict().items()}
+            patience_left = patience
+        else:
+            patience_left -= 1
+            if patience_left <= 0:
+                break
+
+    if best_state is None:
+        raise RuntimeError("Training finished without a valid checkpoint")
+
+    model.load_state_dict(best_state)
+    model.to(device)
+    valid_pred = deepfm_pipeline.predict_dataset(model, valid_loader, device)
+    valid_df = valid_df.copy()
+    valid_df["pred_ctr"] = np.clip(valid_pred, 0.0, 1.0)
+
+    metrics = {
+        "model_type": "deepfm",
+        "global_ctr": float(global_ctr),
+        "train_rows": int(len(train_df)),
+        "valid_rows": int(len(valid_df)),
+        "train_start": str(train_df["event_date"].min().date()),
+        "train_end": str(train_df["event_date"].max().date()),
+        "valid_start": str(valid_df["event_date"].min().date()),
+        "valid_end": str(valid_df["event_date"].max().date()),
+        "best_epoch": int(best_epoch),
+        "weighted_rmse": deepfm_pipeline.weighted_rmse(
+            valid_df["target_ctr"].to_numpy(),
+            valid_df["pred_ctr"].to_numpy(),
+            valid_df["impressions"].to_numpy(),
+        ),
+        "rmse_unweighted": float(np.sqrt(mean_squared_error(valid_df["target_ctr"], valid_df["pred_ctr"]))),
+        "aggregated_logloss": deepfm_pipeline.aggregated_logloss_numpy(
+            valid_df["pred_ctr"].to_numpy(),
+            valid_df["clicks"].to_numpy(),
+            valid_df["impressions"].to_numpy(),
+        ),
+        "ndcg_at_5": deepfm_pipeline.ndcg_at_k(valid_df, k=5),
+        "mean_pred_ctr": float(valid_df["pred_ctr"].mean()),
+        "mean_actual_ctr": float(valid_df["target_ctr"].mean()),
+    }
+
+    checkpoint = {
+        "model_state_dict": {key: value.cpu() for key, value in model.state_dict().items()},
+        "cat_features": deepfm_pipeline.CAT_FEATURES,
+        "dense_features": deepfm_pipeline.DENSE_FEATURES,
+        "feature_cols": deepfm_pipeline.FEATURE_COLS,
+        "cat_cardinalities": cat_cardinalities,
+        "embedding_dim": model.embedding_dim,
+        "vocabs": vocabs,
+        "scaler_mean": scaler.mean_.tolist(),
+        "scaler_scale": scaler.scale_.tolist(),
+        "hidden_dims": hidden_dims_list,
+        "dropout": dropout,
+        "global_ctr": float(global_ctr),
+    }
+    torch.save(checkpoint, output_path / "deepfm_model.pt")
+
+    history_tables, history_specs = deepfm_pipeline.compute_full_history_tables(df, global_ctr)
+    for table_name, table_df in history_tables.items():
+        table_df.to_csv(output_path / f"{table_name}_history.csv.gz", index=False, compression="gzip")
+
+    metadata = {
+        "model_type": "deepfm",
+        "feature_cols": deepfm_pipeline.FEATURE_COLS,
+        "cat_features": deepfm_pipeline.CAT_FEATURES,
+        "dense_features": deepfm_pipeline.DENSE_FEATURES,
+        "global_ctr": float(global_ctr),
+        "latest_event_date": str(max_date.date()),
+        "valid_days": valid_days,
+        "hidden_dims": hidden_dims_list,
+        "embedding_dim": emb_dim,
+        "dropout": dropout,
+        "history_specs": {
+            name: {"group_cols": group_cols, "feature_name": feature_name, "alpha": alpha}
+            for name, (group_cols, feature_name, alpha) in history_specs.items()
+        },
+        "user_cols": deepfm_pipeline.USER_COLS,
+        "banner_cols": deepfm_pipeline.BANNER_COLS,
+        "default_score_mode": "ctr",
+    }
+
+    with open(output_path / "metadata.json", "w", encoding="utf-8") as f:
+        json.dump(metadata, f, ensure_ascii=False, indent=2)
+
+    with open(output_path / "metrics.json", "w", encoding="utf-8") as f:
+        json.dump(metrics, f, ensure_ascii=False, indent=2)
+
+    valid_preview = (
+        valid_df[["event_date", "user_id", "banner_id", "target_ctr", "pred_ctr", "impressions"]]
+        .sort_values("pred_ctr", ascending=False)
+        .head(500)
+    )
+    valid_preview.to_csv(output_path / "validation_preview.csv", index=False)
+
+    return metrics, output_path
+
+
 @st.cache_resource(show_spinner=False)
-def load_model(artifacts_dir: str) -> CatBoostRegressor:
+def load_catboost_model(artifacts_dir: str) -> CatBoostRegressor:
     model = CatBoostRegressor()
     model.load_model(str(Path(artifacts_dir) / "ctr_model.cbm"))
     return model
+
+
+@st.cache_resource(show_spinner=False)
+def load_deepfm_bundle(artifacts_dir: str) -> dict:
+    checkpoint = torch.load(Path(artifacts_dir) / "deepfm_model.pt", map_location="cpu")
+    model = deepfm_pipeline.DeepFM(
+        cat_cardinalities=checkpoint["cat_cardinalities"],
+        dense_dim=len(checkpoint["dense_features"]),
+        hidden_dims=checkpoint["hidden_dims"],
+        dropout=checkpoint["dropout"],
+        emb_dim=checkpoint["embedding_dim"],
+    )
+    model.load_state_dict(checkpoint["model_state_dict"])
+    model.eval()
+    return {"model": model, "checkpoint": checkpoint}
+
+
+def predict_with_deepfm(candidates: pd.DataFrame, artifacts_dir: str) -> np.ndarray:
+    bundle = load_deepfm_bundle(artifacts_dir)
+    checkpoint = bundle["checkpoint"]
+    model = bundle["model"]
+
+    dense_features = checkpoint["dense_features"]
+    cat_features = checkpoint["cat_features"]
+    candidates = deepfm_pipeline.fill_dense_na(candidates, dense_features)
+    dense_values = candidates[dense_features].astype(np.float32).to_numpy()
+
+    scaler = StandardScaler()
+    scaler.mean_ = np.asarray(checkpoint["scaler_mean"], dtype=np.float64)
+    scaler.scale_ = np.asarray(checkpoint["scaler_scale"], dtype=np.float64)
+    scaler.var_ = scaler.scale_ ** 2
+    scaler.n_features_in_ = scaler.mean_.shape[0]
+    dense_scaled = scaler.transform(dense_values).astype(np.float32)
+
+    cat_encoded = deepfm_pipeline.encode_categorical_frame(candidates, checkpoint["vocabs"], cat_features)
+    dataset = deepfm_pipeline.TabularDataset(
+        cat_encoded,
+        dense_scaled,
+        np.zeros(len(candidates), dtype=np.float32),
+        np.ones(len(candidates), dtype=np.float32),
+    )
+    loader = DataLoader(dataset, batch_size=8192, shuffle=False, num_workers=0)
+    return deepfm_pipeline.predict_dataset(model, loader, torch.device("cpu"))
 
 
 def recommend_for_user(
@@ -252,6 +548,7 @@ def recommend_for_user(
     candidate_mode: str,
 ) -> pd.DataFrame:
     metadata = load_metadata(artifacts_dir)
+    model_type = resolve_model_type(metadata)
     users = load_users(users_csv)
     banners = load_banners(banners_csv)
 
@@ -311,9 +608,16 @@ def recommend_for_user(
     candidates["fatigue_penalty"] = 1.0 / (1.0 + np.log1p(candidates["served_impressions_total"]))
     candidates["repeat_click_bonus"] = np.where(candidates["served_clicks_total"] > 0, 1.05, 1.0)
 
-    model = load_model(artifacts_dir)
     feature_cols = metadata["feature_cols"]
-    candidates["pred_ctr"] = np.clip(model.predict(candidates[feature_cols]), 0.0, 1.0)
+    if model_type == "deepfm":
+        candidates["pred_ctr"] = np.clip(
+            predict_with_deepfm(candidates[feature_cols], artifacts_dir),
+            0.0,
+            1.0,
+        )
+    else:
+        model = load_catboost_model(artifacts_dir)
+        candidates["pred_ctr"] = np.clip(model.predict(candidates[feature_cols]), 0.0, 1.0)
 
     if score_mode == "ctr":
         candidates["final_score"] = (
@@ -370,13 +674,48 @@ def render_sidebar() -> dict:
     interactions_csv = st.sidebar.text_input("banner_interactions.csv", DEFAULT_INTERACTIONS)
     users_csv = st.sidebar.text_input("users.csv", DEFAULT_USERS)
     banners_csv = st.sidebar.text_input("banners.csv", DEFAULT_BANNERS)
-    artifacts_dir = st.sidebar.text_input("Папка артефактов модели", DEFAULT_ARTIFACTS)
+
+    preset_options = ["deepfm", "catboost", "custom"]
+    if "artifacts_dir_input" not in st.session_state:
+        st.session_state["artifacts_dir_input"] = DEFAULT_DEEPFM_ARTIFACTS
+    if "artifact_preset" not in st.session_state:
+        st.session_state["artifact_preset"] = infer_artifact_preset(
+            st.session_state["artifacts_dir_input"]
+        )
+
+    artifact_preset = st.sidebar.selectbox(
+        "Пресет артефактов",
+        options=preset_options,
+        key="artifact_preset",
+        on_change=sync_artifact_preset,
+        format_func=lambda value: {
+            "deepfm": "DeepFM",
+            "catboost": "CatBoost",
+            "custom": "Custom",
+        }[value],
+    )
+
+    preset_artifacts_dir = ARTIFACT_PRESETS[artifact_preset]
+    artifacts_dir = st.sidebar.text_input(
+        "Папка артефактов модели",
+        key="artifacts_dir_input",
+        on_change=sync_artifact_dir,
+    )
     retrieval_artifacts_dir = st.sidebar.text_input(
         "Папка retrieval-артефактов",
         DEFAULT_RETRIEVAL_ARTIFACTS,
     )
 
     st.sidebar.caption("Можно оставить пути по умолчанию для ваших текущих файлов в /data/db.")
+    if artifact_preset != "custom":
+        st.sidebar.caption(f"Выбран пресет `{artifact_preset}`: `{preset_artifacts_dir}`")
+    metadata_path = Path(artifacts_dir) / "metadata.json"
+    if metadata_path.exists():
+        try:
+            detected_model_type = resolve_model_type(load_metadata(artifacts_dir))
+            st.sidebar.caption(f"Тип артефактов: `{detected_model_type}`")
+        except Exception:
+            st.sidebar.caption("Не удалось прочитать metadata.json")
 
     return {
         "interactions_csv": interactions_csv,
@@ -405,41 +744,97 @@ def render_previews(cfg: dict) -> None:
 
 
 def train_tab(cfg: dict) -> None:
-    st.subheader("Обучение CTR-модели")
-    c1, c2, c3, c4 = st.columns(4)
-    with c1:
-        valid_days = st.number_input("Окно validation, дней", min_value=3, max_value=60, value=14)
-    with c2:
-        iterations = st.number_input("Итерации CatBoost", min_value=50, max_value=5000, value=400, step=50)
-    with c3:
-        learning_rate = st.number_input("Learning rate", min_value=0.001, max_value=0.5, value=0.05, step=0.01, format="%.3f")
-    with c4:
-        depth = st.number_input("Depth", min_value=3, max_value=12, value=8)
+    st.subheader("Обучение модели")
+    train_model_type = st.radio(
+        "Архитектура",
+        options=["catboost", "deepfm"],
+        horizontal=True,
+        help="CatBoost для быстрого baseline, DeepFM для нейросеточной ranking-модели.",
+    )
 
+    valid_days = st.number_input("Окно validation, дней", min_value=3, max_value=60, value=14)
     random_seed = st.number_input("Random seed", min_value=0, max_value=10_000, value=42)
+
+    if train_model_type == "catboost":
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            iterations = st.number_input("Итерации CatBoost", min_value=50, max_value=5000, value=400, step=50)
+        with c2:
+            learning_rate = st.number_input("Learning rate", min_value=0.001, max_value=0.5, value=0.05, step=0.01, format="%.3f")
+        with c3:
+            depth = st.number_input("Depth", min_value=3, max_value=12, value=8)
+        suggested_output_dir = DEFAULT_ARTIFACTS
+    else:
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            epochs = st.number_input("Epochs", min_value=1, max_value=100, value=8)
+        with c2:
+            batch_size = st.number_input("Batch size", min_value=128, max_value=65536, value=4096, step=128)
+        with c3:
+            learning_rate = st.number_input("Learning rate", min_value=0.0001, max_value=0.1, value=0.001, step=0.0005, format="%.4f")
+        with c4:
+            emb_dim = st.number_input("Embedding dim", min_value=4, max_value=128, value=16, step=4)
+        c5, c6, c7, c8 = st.columns(4)
+        with c5:
+            weight_decay = st.number_input("Weight decay", min_value=0.0, max_value=0.1, value=0.000001, step=0.000001, format="%.6f")
+        with c6:
+            dropout = st.number_input("Dropout", min_value=0.0, max_value=0.9, value=0.1, step=0.05, format="%.2f")
+        with c7:
+            patience = st.number_input("Patience", min_value=1, max_value=20, value=2)
+        with c8:
+            device_name = st.selectbox("Device", options=["auto", "cpu", "cuda"], index=0)
+        hidden_dims = st.text_input("Hidden dims", value="256,128,64")
+        suggested_output_dir = DEFAULT_DEEPFM_ARTIFACTS
+
+    output_dir = st.text_input("Папка для сохранения артефактов", value=cfg.get("artifacts_dir") or suggested_output_dir)
 
     if st.button("Обучить и сохранить артефакты", type="primary"):
         with st.spinner("Идёт обучение модели..."):
-            metrics, output_path = train_model(
-                interactions_csv=cfg["interactions_csv"],
-                users_csv=cfg["users_csv"],
-                banners_csv=cfg["banners_csv"],
-                output_dir=cfg["artifacts_dir"],
-                valid_days=int(valid_days),
-                iterations=int(iterations),
-                learning_rate=float(learning_rate),
-                depth=int(depth),
-                random_seed=int(random_seed),
-            )
+            if train_model_type == "catboost":
+                metrics, output_path = train_catboost_model(
+                    interactions_csv=cfg["interactions_csv"],
+                    users_csv=cfg["users_csv"],
+                    banners_csv=cfg["banners_csv"],
+                    output_dir=output_dir,
+                    valid_days=int(valid_days),
+                    iterations=int(iterations),
+                    learning_rate=float(learning_rate),
+                    depth=int(depth),
+                    random_seed=int(random_seed),
+                )
+            else:
+                metrics, output_path = train_deepfm_model(
+                    interactions_csv=cfg["interactions_csv"],
+                    users_csv=cfg["users_csv"],
+                    banners_csv=cfg["banners_csv"],
+                    output_dir=output_dir,
+                    valid_days=int(valid_days),
+                    epochs=int(epochs),
+                    batch_size=int(batch_size),
+                    learning_rate=float(learning_rate),
+                    weight_decay=float(weight_decay),
+                    dropout=float(dropout),
+                    hidden_dims=hidden_dims,
+                    emb_dim=int(emb_dim),
+                    patience=int(patience),
+                    random_seed=int(random_seed),
+                    device_name=device_name,
+                )
             st.session_state["last_artifacts_dir"] = str(output_path)
 
         st.success(f"Артефакты сохранены в: {output_path}")
         metric_cols = st.columns(5)
         metric_cols[0].metric("weighted RMSE", f"{metrics['weighted_rmse']:.4f}")
         metric_cols[1].metric("RMSE", f"{metrics['rmse_unweighted']:.4f}")
-        metric_cols[2].metric("NDCG@5", f"{metrics['ndcg_at_5']:.4f}")
+        metric_cols[2].metric(
+            "Logloss" if "aggregated_logloss" in metrics else "NDCG@5",
+            f"{metrics.get('aggregated_logloss', metrics['ndcg_at_5']):.4f}",
+        )
         metric_cols[3].metric("mean pred CTR", f"{metrics['mean_pred_ctr']:.4f}")
         metric_cols[4].metric("mean actual CTR", f"{metrics['mean_actual_ctr']:.4f}")
+
+        if "aggregated_logloss" in metrics:
+            st.caption(f"NDCG@5: {metrics['ndcg_at_5']:.4f}")
 
         st.json(metrics)
 
@@ -452,6 +847,20 @@ def train_tab(cfg: dict) -> None:
 def recommend_tab(cfg: dict) -> None:
     st.subheader("Рекомендации баннеров для пользователя")
 
+    quick_switch_cols = st.columns(2)
+    with quick_switch_cols[0]:
+        if st.button("Использовать DeepFM", use_container_width=True):
+            request_active_artifacts_dir(DEFAULT_DEEPFM_ARTIFACTS)
+            st.rerun()
+    with quick_switch_cols[1]:
+        if st.button("Использовать CatBoost", use_container_width=True):
+            request_active_artifacts_dir(DEFAULT_ARTIFACTS)
+            st.rerun()
+
+    metadata = load_metadata(cfg["artifacts_dir"])
+    model_type = resolve_model_type(metadata)
+    st.caption(f"Активная модель ранжирования: `{model_type}`")
+
     users_df = load_users(cfg["users_csv"])
     default_user = str(users_df["user_id"].iloc[0]) if not users_df.empty else ""
 
@@ -461,7 +870,12 @@ def recommend_tab(cfg: dict) -> None:
     with c2:
         top_k = st.number_input("top_k", min_value=1, max_value=100, value=10)
     with c3:
-        score_mode = st.selectbox("score_mode", options=["ctr", "value"], index=0)
+        default_score_mode = metadata.get("default_score_mode", "ctr")
+        score_mode = st.selectbox(
+            "score_mode",
+            options=["ctr", "value"],
+            index=0 if default_score_mode == "ctr" else 1,
+        )
 
     c4, c5, c6 = st.columns(3)
     with c4:
@@ -546,7 +960,9 @@ def artifacts_tab(cfg: dict) -> None:
     metadata_path = art_dir / "metadata.json"
     if metadata_path.exists():
         st.markdown("**metadata.json**")
-        st.json(load_metadata(cfg["artifacts_dir"]))
+        metadata = load_metadata(cfg["artifacts_dir"])
+        st.json(metadata)
+        st.caption(f"Определённый тип модели: `{resolve_model_type(metadata)}`")
 
     selected = st.selectbox("Посмотреть файл", options=[p.name for p in files])
     selected_path = art_dir / selected
@@ -565,8 +981,9 @@ def artifacts_tab(cfg: dict) -> None:
 def main() -> None:
     st.set_page_config(page_title="Banner CTR / Ranking", layout="wide")
     st.title("Banner CTR / Ranking Studio")
-    st.caption("Streamlit-приложение для обучения персональной CTR-модели и выдачи top-K баннеров пользователю.")
+    st.caption("Streamlit-приложение для обучения CatBoost/DeepFM ранжирования и выдачи top-K баннеров пользователю.")
 
+    apply_pending_artifacts_dir()
     cfg = render_sidebar()
     render_previews(cfg)
 
