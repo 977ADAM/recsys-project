@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.11.9"
 dependencies = [
     "catboost>=1.2.10",
+    "fastapi[standard]>=0.135.3",
     "jupyter>=1.1.1",
     "numpy>=2.4.4",
     "pandas>=3.0.2",
