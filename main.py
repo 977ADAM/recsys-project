@@ -108,7 +108,7 @@ def print_overview(parser: argparse.ArgumentParser) -> int:
     return 0
 
 
-def main() -> int:
+def main() -> int: 
     parser = build_parser()
     args = parser.parse_args()
 
