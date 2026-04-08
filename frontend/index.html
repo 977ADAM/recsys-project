@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pulse Ledger</title>
+    <meta
+      name="description"
+      content="Новостной frontend для recommendation API с рекламными слотами и нативными баннерными вставками."
+    />
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="./app.js" defer></script>
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="site-header">
+        <div class="topline">
+          <span>Персонализированная редакция</span>
+          <span id="api-status" class="status-chip">API checking</span>
+        </div>
+        <div class="masthead">
+          <div>
+            <p class="eyebrow">Newsroom UI for Recsys</p>
+            <h1>Pulse Ledger</h1>
+            <p class="subtitle">
+              Новостная витрина для вашего recommendation API: лента, партнерские материалы и
+              готовые места под размещение баннеров.
+            </p>
+          </div>
+          <div class="masthead-actions">
+            <button id="refresh-button" class="button button-primary" type="button">
+              Обновить ленту
+            </button>
+            <button id="demo-button" class="button button-secondary" type="button">
+              Демо-режим
+            </button>
+          </div>
+        </div>
+        <nav class="section-strip" aria-label="Разделы">
+          <span>Главное</span>
+          <span>Технологии</span>
+          <span>Ритейл</span>
+          <span>Путешествия</span>
+          <span>Образование</span>
+          <span>Партнерские истории</span>
+        </nav>
+      </header>
+
+      <main class="main-layout">
+        <section class="control-panel panel reveal">
+          <div class="section-title">
+            <div>
+              <p class="kicker">Control Desk</p>
+              <h2>Настройки запроса</h2>
+            </div>
+            <p class="section-note">Фронтенд по умолчанию ходит в backend proxy `/api/v1/recommendations`.</p>
+          </div>
+
+          <form id="controls-form" class="controls-grid">
+            <label>
+              <span>User ID</span>
+              <input id="user-id" name="userId" type="text" value="u_00007" />
+            </label>
+            <label>
+              <span>Top K</span>
+              <input id="top-k" name="topK" type="number" min="3" max="24" value="8" />
+            </label>
+            <label>
+              <span>Candidate mode</span>
+              <select id="candidate-mode" name="candidateMode">
+                <option value="retrieval + ranking" selected>retrieval + ranking</option>
+                <option value="all banners">all banners</option>
+              </select>
+            </label>
+            <label>
+              <span>Score mode</span>
+              <select id="score-mode" name="scoreMode">
+                <option value="value" selected>value</option>
+                <option value="ctr">ctr</option>
+              </select>
+            </label>
+            <label>
+              <span>Retrieval top N</span>
+              <input id="retrieval-top-n" name="retrievalTopN" type="number" min="10" max="300" value="60" />
+            </label>
+            <label>
+              <span>Endpoint</span>
+              <input id="recommendation-endpoint" name="endpoint" type="text" value="/api/v1/recommendations" />
+            </label>
+            <label class="toggle">
+              <input id="only-active" name="onlyActive" type="checkbox" checked />
+              <span>Только активные баннеры</span>
+            </label>
+            <label class="toggle">
+              <input id="exclude-seen" name="excludeSeen" type="checkbox" checked />
+              <span>Скрывать уже показанные</span>
+            </label>
+            <div class="controls-actions">
+              <button class="button button-primary" type="submit">Загрузить из API</button>
+            </div>
+          </form>
+
+          <div class="quick-users">
+            <span>Быстрые профили:</span>
+            <button class="chip" type="button" data-user-id="u_00007">u_00007</button>
+            <button class="chip" type="button" data-user-id="u_00021">u_00021</button>
+            <button class="chip" type="button" data-user-id="u_00032">u_00032</button>
+            <button class="chip" type="button" data-user-id="u_00057">u_00057</button>
+          </div>
+        </section>
+
+        <section class="leaderboard-slot ad-slot reveal" data-slot="leaderboard">
+          <div>
+            <p class="slot-label">Ad Slot 970x250</p>
+            <h3>Верхний leaderboard</h3>
+            <p>Место для крупного баннера над главным материалом или для takeover-кампании.</p>
+          </div>
+          <div class="slot-code">insert GAM / AdFox / custom HTML</div>
+        </section>
+
+        <section class="hero-layout reveal">
+          <article id="hero-story" class="hero-story panel"></article>
+          <aside id="news-briefing" class="news-briefing panel"></aside>
+        </section>
+
+        <section class="content-layout">
+          <section class="feed-column">
+            <div class="section-title reveal">
+              <div>
+                <p class="kicker">Personal Feed</p>
+                <h2>Нативная лента</h2>
+              </div>
+              <p class="section-note">Карточки ниже рендерятся из рекомендаций и стилизованы как редакционные материалы.</p>
+            </div>
+            <div id="feed-grid" class="feed-grid"></div>
+            <section id="midroll-slot" class="ad-slot ad-slot-inline reveal" data-slot="midroll"></section>
+            <section id="native-band" class="native-band reveal"></section>
+          </section>
+
+          <aside class="sidebar-column">
+            <section class="panel reveal">
+              <div class="section-title compact">
+                <div>
+                  <p class="kicker">Audience Snapshot</p>
+                  <h2>Профиль выдачи</h2>
+                </div>
+              </div>
+              <div id="profile-card" class="profile-card"></div>
+            </section>
+
+            <section class="panel reveal">
+              <div class="section-title compact">
+                <div>
+                  <p class="kicker">Sponsored Rail</p>
+                  <h2>Партнерские блоки</h2>
+                </div>
+              </div>
+              <div id="sponsored-rail" class="sponsored-rail"></div>
+            </section>
+
+            <section class="ad-slot ad-slot-rail reveal" data-slot="right-rail">
+              <div>
+                <p class="slot-label">Ad Slot 300x600</p>
+                <h3>Sticky right rail</h3>
+                <p>Подходит для долгих охватных кампаний, бренд-лифтов и ремаркетинга.</p>
+              </div>
+              <div class="slot-code">sticky sidebar creative</div>
+            </section>
+          </aside>
+        </section>
+
+        <section class="placements panel reveal">
+          <div class="section-title">
+            <div>
+              <p class="kicker">Placement Map</p>
+              <h2>Куда размещать баннеры</h2>
+            </div>
+            <p class="section-note">Сетка ниже показывает рекламные точки, которые уже встроены в макет.</p>
+          </div>
+          <div id="placement-grid" class="placement-grid"></div>
+        </section>
+
+        <section class="panel reveal">
+          <div class="section-title compact">
+            <div>
+              <p class="kicker">Response Meta</p>
+              <h2>Состояние модели</h2>
+            </div>
+          </div>
+          <div id="meta-grid" class="meta-grid"></div>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>
