@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11.9"
 dependencies = [
     "alembic>=1.18.4",
+    "psycopg>=3.3.3",
     "PyYAML>=6.0.2",
 ]
 

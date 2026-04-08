@@ -2958,6 +2958,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
+    { name = "psycopg" },
     { name = "pyyaml" },
 ]
 
@@ -3000,6 +3001,7 @@ requires-dist = [
     { name = "numpy", marker = "extra == 'train'", specifier = ">=2.4.4" },
     { name = "pandas", marker = "extra == 'inference'", specifier = ">=3.0.2" },
     { name = "pandas", marker = "extra == 'train'", specifier = ">=3.0.2" },
+    { name = "psycopg", specifier = ">=3.3.3" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'api'", specifier = ">=3.2.9" },
     { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "redis", marker = "extra == 'api'", specifier = ">=6.4.0" },
