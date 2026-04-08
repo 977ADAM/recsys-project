@@ -10,7 +10,6 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from backend.src.api.deps import get_app_settings  # noqa: E402
-from backend.src.api.router import api_router  # noqa: E402
 from backend.src.core.db import init_db  # noqa: E402
 
 
@@ -25,8 +24,7 @@ def create_app() -> FastAPI:
     @app.on_event("startup")
     def on_startup() -> None:
         init_db(settings)
-
-    app.include_router(api_router, prefix=settings.api_v1_prefix)
+        
     return app
 
 
