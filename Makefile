@@ -1,3 +1,9 @@
+-include .env
+export
+
+export PROJECT_ROOT := $(shell pwd)
+
+
 up:
 	./.venv/bin/python main.py train-ranker \
 		--output-dir ctr_artifacts \
@@ -56,3 +62,17 @@ redis-logs:
 
 postgres-logs:
 	docker compose logs -f postgres
+
+
+amc-create:
+	alembic init backend/migrations
+
+amc-up:
+	@alembic upgrade head
+
+amc-action:
+	@if [ -z "$(action)" ]; then \
+		echo "Отсутствует необходимый параметр action. Пример: make migrate-action action=up"; \
+		exit 1; \
+	fi; \
+	alembic revision -m "$(action)"
