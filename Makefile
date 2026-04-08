@@ -25,7 +25,7 @@ postgres-up:
 	docker compose up -d postgres
 
 api-up:
-	docker compose up -d api
+	docker compose up --build api
 
 
 inference-up:
