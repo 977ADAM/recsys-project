@@ -15,7 +15,10 @@ def get_app_settings() -> Settings:
 
 @lru_cache(maxsize=1)
 def get_recommendation_service() -> RecommendationService:
-    return RecommendationService(settings=get_app_settings())
+    return RecommendationService(
+        settings=get_app_settings(),
+        online_state=get_online_state_store(),
+    )
 
 
 @lru_cache(maxsize=1)

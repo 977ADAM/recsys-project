@@ -167,8 +167,36 @@ def build_app() -> FastAPI:
             if col not in candidates.columns:
                 candidates[col] = 0
 
+        if payload.online_banner_stats:
+            online_stats_df = pd.DataFrame([item.model_dump() for item in payload.online_banner_stats])
+            candidates = candidates.merge(
+                online_stats_df.rename(
+                    columns={
+                        "served_impressions_total": "online_served_impressions_total",
+                        "served_clicks_total": "online_served_clicks_total",
+                    }
+                ),
+                on="banner_id",
+                how="left",
+            )
+            candidates["served_impressions_total"] = (
+                candidates["served_impressions_total"]
+                + candidates["online_served_impressions_total"].fillna(0.0)
+            )
+            candidates["served_clicks_total"] = (
+                candidates["served_clicks_total"]
+                + candidates["online_served_clicks_total"].fillna(0.0)
+            )
+            candidates = candidates.drop(
+                columns=["online_served_impressions_total", "online_served_clicks_total"]
+            )
+
         if payload.exclude_seen and payload.candidate_mode == "all banners":
             candidates = candidates[candidates["served_impressions_total"] == 0].copy()
+        if payload.exclude_seen and payload.online_seen_banner_ids:
+            candidates = candidates[
+                ~candidates["banner_id"].astype(str).isin(payload.online_seen_banner_ids)
+            ].copy()
 
         candidates["fatigue_penalty"] = 1.0 / (1.0 + np.log1p(candidates["served_impressions_total"]))
         candidates["repeat_click_bonus"] = np.where(candidates["served_clicks_total"] > 0, 1.05, 1.0)
@@ -238,7 +266,7 @@ def build_app() -> FastAPI:
             model_type=model_type,
             artifacts_dir=str(Path(ARTIFACTS_DIR).resolve()),
             retrieval_used=payload.candidate_mode == "retrieval + ranking",
-            online_state_applied=False,
+            online_state_applied=bool(payload.online_seen_banner_ids or payload.online_banner_stats),
             top_k=payload.top_k,
             items=items,
         )

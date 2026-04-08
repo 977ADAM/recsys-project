@@ -5,6 +5,12 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
+class OnlineBannerStats(BaseModel):
+    banner_id: str
+    served_impressions_total: float = 0.0
+    served_clicks_total: float = 0.0
+
+
 class RecommendationRequest(BaseModel):
     user_id: str = Field(..., description="Identifier of the user to recommend banners for.")
     session_id: str | None = Field(default=None, description="Optional current session identifier.")
@@ -15,6 +21,8 @@ class RecommendationRequest(BaseModel):
     as_of_date: str | None = Field(default=None, description="Optional YYYY-MM-DD serve date.")
     candidate_mode: Literal["all banners", "retrieval + ranking"] = "retrieval + ranking"
     retrieval_top_n: int = Field(default=100, ge=1, le=1000)
+    online_seen_banner_ids: list[str] = Field(default_factory=list)
+    online_banner_stats: list[OnlineBannerStats] = Field(default_factory=list)
 
 
 class RecommendationItem(BaseModel):

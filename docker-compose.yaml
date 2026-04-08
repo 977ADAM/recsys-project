@@ -8,11 +8,11 @@ services:
       APP_NAME: Recsys API
       API_V1_PREFIX: /api/v1
       DATABASE_URL: postgresql+psycopg://recsys:recsys@postgres:5432/recsys
-      INFERENCE_URL: http://inference:8080
+      INFERENCE_URL: http://inference:8001
       REDIS_URL: redis://redis:6379/0
       EVENT_LOG_PATH: out/events/events.jsonl
     ports:
-      - "8080:8080"
+      - "${API_HOST_PORT:-8080}:8000"
     depends_on:
       inference:
         condition: service_healthy
@@ -21,7 +21,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -32,9 +32,9 @@ services:
       dockerfile: Dockerfile.inference
     container_name: recsys-inference
     ports:
-      - "8081:8081"
+      - "${INFERENCE_HOST_PORT:-8001}:8001"
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8081/health')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
       interval: 10s
       timeout: 5s
       retries: 10
