@@ -9,7 +9,7 @@
       content="Витрина рекомендаций и web-админка для CRUD-управления баннерами."
     />
     <link rel="stylesheet" href="./styles.css" />
-    <script src="./app.js" defer></script>
+    <script type="module" src="./js/main.js"></script>
   </head>
   <body>
     <div class="page-shell">
@@ -131,6 +131,15 @@
                   value="60"
                 />
               </label>
+              <label class="wide-field">
+                <span>Retrieval artifacts dir</span>
+                <input
+                  id="retrieval-artifacts-dir"
+                  name="retrievalArtifactsDir"
+                  type="text"
+                  value="artifacts/pytorch_retrieval"
+                />
+              </label>
               <label class="toggle">
                 <input id="only-active" name="onlyActive" type="checkbox" checked />
                 <span>Только активные</span>
@@ -143,6 +152,8 @@
                 <button class="button button-primary" type="submit">Пересчитать выдачу</button>
               </div>
             </form>
+
+            <div id="recommendation-feedback" class="inline-feedback" hidden></div>
 
             <div class="quick-users">
               <span>Быстрые профили:</span>
@@ -294,6 +305,25 @@
                 </select>
               </label>
 
+              <label>
+                <span>Сортировка</span>
+                <select id="banner-sort">
+                  <option value="created_desc">Сначала новые</option>
+                  <option value="cpm_desc">CPM по убыванию</option>
+                  <option value="quality_desc">Quality по убыванию</option>
+                  <option value="brand_asc">Brand A-Z</option>
+                </select>
+              </label>
+
+              <label>
+                <span>Страница</span>
+                <select id="banner-page-size">
+                  <option value="4">4</option>
+                  <option value="8" selected>8</option>
+                  <option value="12">12</option>
+                </select>
+              </label>
+
               <div class="toolbar-actions">
                 <button id="reload-banners-button" class="button button-secondary" type="button">
                   Обновить список
@@ -358,6 +388,21 @@
                   <tbody id="banners-table-body"></tbody>
                 </table>
               </div>
+
+              <div id="banners-mobile-list" class="mobile-record-list"></div>
+
+              <div class="table-footer">
+                <p id="banners-pagination-caption" class="section-note">Строки 0-0 из 0</p>
+                <div class="pagination-controls">
+                  <button id="banners-prev-page" class="button button-secondary" type="button">
+                    Назад
+                  </button>
+                  <span id="banners-page-indicator" class="status-chip">1 / 1</span>
+                  <button id="banners-next-page" class="button button-secondary" type="button">
+                    Далее
+                  </button>
+                </div>
+              </div>
             </section>
 
             <section class="panel admin-form-panel reveal">
@@ -370,6 +415,8 @@
                   Заполните поля и сохраните запись в backend.
                 </p>
               </div>
+
+              <div id="banner-form-errors" class="inline-feedback" hidden></div>
 
               <form id="banner-form" class="banner-form-grid">
                 <label>
@@ -470,6 +517,8 @@
                   </button>
                 </div>
               </form>
+
+              <div id="banner-preview" class="entity-preview"></div>
             </section>
           </section>
         </section>
@@ -503,6 +552,25 @@
                   <option value="all">Все пользователи</option>
                   <option value="premium">Только premium</option>
                   <option value="standard">Только standard</option>
+                </select>
+              </label>
+
+              <label>
+                <span>Сортировка</span>
+                <select id="user-sort">
+                  <option value="signup_desc">Signup days по убыванию</option>
+                  <option value="age_desc">Age по убыванию</option>
+                  <option value="country_asc">Country A-Z</option>
+                  <option value="premium_first">Premium сначала</option>
+                </select>
+              </label>
+
+              <label>
+                <span>Страница</span>
+                <select id="user-page-size">
+                  <option value="4">4</option>
+                  <option value="8" selected>8</option>
+                  <option value="12">12</option>
                 </select>
               </label>
 
@@ -570,6 +638,21 @@
                   <tbody id="users-table-body"></tbody>
                 </table>
               </div>
+
+              <div id="users-mobile-list" class="mobile-record-list"></div>
+
+              <div class="table-footer">
+                <p id="users-pagination-caption" class="section-note">Строки 0-0 из 0</p>
+                <div class="pagination-controls">
+                  <button id="users-prev-page" class="button button-secondary" type="button">
+                    Назад
+                  </button>
+                  <span id="users-page-indicator" class="status-chip">1 / 1</span>
+                  <button id="users-next-page" class="button button-secondary" type="button">
+                    Далее
+                  </button>
+                </div>
+              </div>
             </section>
 
             <section class="panel admin-form-panel reveal">
@@ -582,6 +665,8 @@
                   Заполните поля и сохраните запись в backend.
                 </p>
               </div>
+
+              <div id="user-form-errors" class="inline-feedback" hidden></div>
 
               <form id="user-form" class="banner-form-grid">
                 <label>
@@ -669,6 +754,8 @@
                   </button>
                 </div>
               </form>
+
+              <div id="user-preview" class="entity-preview"></div>
             </section>
           </section>
         </section>

@@ -14,4 +14,4 @@ uvicorn backend.cmd.api.main:app --reload --port 8080
 http://localhost:8080
 ```
 
-Лента, рекламные слоты и карточки собираются локально в `frontend/app.js`, поэтому отдельный inference backend больше не нужен.
+Лента, рекламные слоты и карточки собираются локально через модульный frontend в `frontend/js/`, поэтому отдельный inference backend больше не нужен.
