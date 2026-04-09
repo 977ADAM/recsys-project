@@ -60,6 +60,16 @@
           >
             Banner Admin
           </button>
+          <button
+            id="users-tab"
+            class="view-tab"
+            type="button"
+            role="tab"
+            aria-selected="false"
+            data-view="users"
+          >
+            User Admin
+          </button>
         </div>
 
         <nav class="section-strip" aria-label="Разделы">
@@ -67,6 +77,7 @@
           <span>Нативная лента</span>
           <span>Партнерские слоты</span>
           <span>Таблица баннеров</span>
+          <span>Таблица пользователей</span>
           <span>Создание и редактирование</span>
           <span>Быстрый workflow для QA</span>
         </nav>
@@ -455,6 +466,205 @@
                     Очистить форму
                   </button>
                   <button id="delete-banner-button" class="button button-danger" type="button">
+                    Удалить
+                  </button>
+                </div>
+              </form>
+            </section>
+          </section>
+        </section>
+
+        <section id="users-view" class="view-section" aria-labelledby="users-tab" hidden>
+          <section class="panel admin-hero reveal">
+            <div class="section-title">
+              <div>
+                <p class="kicker">User Admin</p>
+                <h2>CRUD и ручное редактирование users</h2>
+              </div>
+              <p class="section-note">
+                Таблица ниже работает с `/api/v1/users`: можно создать пользователя, обновить
+                профиль, быстро найти сегмент и удалить запись.
+              </p>
+            </div>
+
+            <div class="admin-toolbar">
+              <label class="search-input">
+                <span>Поиск</span>
+                <input
+                  id="user-search"
+                  type="search"
+                  placeholder="user id, country, platform, interests..."
+                />
+              </label>
+
+              <label>
+                <span>Premium</span>
+                <select id="user-premium-filter">
+                  <option value="all">Все пользователи</option>
+                  <option value="premium">Только premium</option>
+                  <option value="standard">Только standard</option>
+                </select>
+              </label>
+
+              <div class="toolbar-actions">
+                <button id="reload-users-button" class="button button-secondary" type="button">
+                  Обновить список
+                </button>
+                <button id="new-user-button" class="button button-primary" type="button">
+                  Новый user
+                </button>
+              </div>
+            </div>
+
+            <div class="overview-grid admin-stats">
+              <article class="overview-card">
+                <p class="slot-label">All Users</p>
+                <h3 id="admin-total-users">0</h3>
+                <p class="overview-copy">Всего профилей в backend</p>
+              </article>
+              <article class="overview-card">
+                <p class="slot-label">Premium</p>
+                <h3 id="admin-premium-users">0</h3>
+                <p class="overview-copy">Премиальные пользователи</p>
+              </article>
+              <article class="overview-card">
+                <p class="slot-label">Average Age</p>
+                <h3 id="admin-average-age">0</h3>
+                <p class="overview-copy">Средний возраст в users inventory</p>
+              </article>
+              <article class="overview-card">
+                <p class="slot-label">Selected</p>
+                <h3 id="admin-selected-user">Новый</h3>
+                <p class="overview-copy">Текущий объект редактирования</p>
+              </article>
+            </div>
+          </section>
+
+          <section class="admin-layout">
+            <section class="panel admin-list-panel reveal">
+              <div class="section-title compact">
+                <div>
+                  <p class="kicker">Users</p>
+                  <h2>Список пользователей</h2>
+                </div>
+                <p id="users-list-caption" class="section-note">Загрузка списка...</p>
+              </div>
+
+              <div id="users-table-empty" class="empty-state" hidden>
+                <p>По текущим фильтрам пользователи не найдены.</p>
+              </div>
+
+              <div class="table-wrap">
+                <table class="banner-table">
+                  <thead>
+                    <tr>
+                      <th>User ID</th>
+                      <th>Age</th>
+                      <th>Gender</th>
+                      <th>Platform</th>
+                      <th>Country</th>
+                      <th>Income</th>
+                      <th>Premium</th>
+                    </tr>
+                  </thead>
+                  <tbody id="users-table-body"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="panel admin-form-panel reveal">
+              <div class="section-title compact">
+                <div>
+                  <p class="kicker">Editor</p>
+                  <h2 id="user-form-title">Создать нового пользователя</h2>
+                </div>
+                <p id="user-form-caption" class="section-note">
+                  Заполните поля и сохраните запись в backend.
+                </p>
+              </div>
+
+              <form id="user-form" class="banner-form-grid">
+                <label>
+                  <span>User ID</span>
+                  <input id="manage-user-id" name="user_id" type="text" maxlength="20" required />
+                </label>
+                <label>
+                  <span>Age</span>
+                  <input id="manage-user-age" name="age" type="number" min="0" required />
+                </label>
+                <label>
+                  <span>Gender</span>
+                  <select id="manage-user-gender" name="gender" required>
+                    <option value="U">U</option>
+                    <option value="M">M</option>
+                    <option value="F">F</option>
+                  </select>
+                </label>
+                <label>
+                  <span>City tier</span>
+                  <input id="manage-user-city-tier" name="city_tier" type="text" maxlength="10" required />
+                </label>
+                <label>
+                  <span>Device OS</span>
+                  <input id="manage-user-device-os" name="device_os" type="text" maxlength="20" required />
+                </label>
+                <label>
+                  <span>Platform</span>
+                  <input id="manage-user-platform" name="platform" type="text" maxlength="20" required />
+                </label>
+                <label>
+                  <span>Income band</span>
+                  <input id="manage-user-income-band" name="income_band" type="text" maxlength="10" required />
+                </label>
+                <label>
+                  <span>Activity segment</span>
+                  <input
+                    id="manage-user-activity-segment"
+                    name="activity_segment"
+                    type="text"
+                    maxlength="10"
+                    required
+                  />
+                </label>
+                <label>
+                  <span>Interest 1</span>
+                  <input id="manage-user-interest-1" name="interest_1" type="text" maxlength="50" required />
+                </label>
+                <label>
+                  <span>Interest 2</span>
+                  <input id="manage-user-interest-2" name="interest_2" type="text" maxlength="50" required />
+                </label>
+                <label>
+                  <span>Interest 3</span>
+                  <input id="manage-user-interest-3" name="interest_3" type="text" maxlength="50" required />
+                </label>
+                <label>
+                  <span>Country</span>
+                  <input id="manage-user-country" name="country" type="text" maxlength="2" required />
+                </label>
+                <label>
+                  <span>Signup days ago</span>
+                  <input
+                    id="manage-user-signup-days-ago"
+                    name="signup_days_ago"
+                    type="number"
+                    min="0"
+                    required
+                  />
+                </label>
+                <label class="toggle">
+                  <input id="manage-user-is-premium" name="is_premium" type="checkbox" />
+                  <span>Пользователь premium</span>
+                </label>
+
+                <div class="banner-form-actions">
+                  <button id="save-user-button" class="button button-primary" type="submit">
+                    Сохранить пользователя
+                  </button>
+                  <button id="reset-user-button" class="button button-secondary" type="button">
+                    Очистить форму
+                  </button>
+                  <button id="delete-user-button" class="button button-danger" type="button">
                     Удалить
                   </button>
                 </div>

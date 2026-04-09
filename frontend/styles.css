@@ -784,6 +784,16 @@ select:focus {
   background: var(--danger-soft);
 }
 
+.table-pill.is-premium {
+  color: var(--teal);
+  background: var(--teal-soft);
+}
+
+.table-pill.is-standard {
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.72);
+}
+
 .wide-field {
   grid-column: 1 / -1;
 }

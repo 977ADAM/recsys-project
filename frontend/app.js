@@ -177,6 +177,73 @@ const DEMO_BANNERS = [
   },
 ];
 
+const DEMO_USERS = [
+  {
+    user_id: "u_00007",
+    age: 29,
+    gender: "U",
+    city_tier: "tier_1",
+    device_os: "ios",
+    platform: "mobile_app",
+    income_band: "high",
+    activity_segment: "power",
+    interest_1: "travel",
+    interest_2: "gadgets",
+    interest_3: "food",
+    country: "RU",
+    signup_days_ago: 420,
+    is_premium: true,
+  },
+  {
+    user_id: "u_00021",
+    age: 34,
+    gender: "F",
+    city_tier: "tier_1",
+    device_os: "android",
+    platform: "mobile_app",
+    income_band: "mid",
+    activity_segment: "steady",
+    interest_1: "education",
+    interest_2: "design",
+    interest_3: "cinema",
+    country: "RU",
+    signup_days_ago: 180,
+    is_premium: false,
+  },
+  {
+    user_id: "u_00032",
+    age: 24,
+    gender: "M",
+    city_tier: "tier_2",
+    device_os: "ios",
+    platform: "web",
+    income_band: "mid",
+    activity_segment: "active",
+    interest_1: "sports",
+    interest_2: "fashion",
+    interest_3: "electronics",
+    country: "KZ",
+    signup_days_ago: 90,
+    is_premium: true,
+  },
+  {
+    user_id: "u_00057",
+    age: 41,
+    gender: "U",
+    city_tier: "tier_3",
+    device_os: "android",
+    platform: "mobile_web",
+    income_band: "low",
+    activity_segment: "casual",
+    interest_1: "finance",
+    interest_2: "home",
+    interest_3: "travel",
+    country: "BY",
+    signup_days_ago: 760,
+    is_premium: false,
+  },
+];
+
 const CATEGORY_TITLES = {
   education: "Образование",
   travel: "Путешествия",
@@ -233,6 +300,12 @@ const state = {
   bannerFormMode: "create",
   bannerSearch: "",
   bannerStatusFilter: "all",
+  users: [...DEMO_USERS],
+  usersSource: "demo",
+  selectedUserId: null,
+  userFormMode: "create",
+  userSearch: "",
+  userPremiumFilter: "all",
 };
 
 const elements = {
@@ -241,8 +314,10 @@ const elements = {
   demoButton: document.querySelector("#demo-button"),
   showcaseTab: document.querySelector("#showcase-tab"),
   adminTab: document.querySelector("#admin-tab"),
+  usersTab: document.querySelector("#users-tab"),
   showcaseView: document.querySelector("#showcase-view"),
   adminView: document.querySelector("#admin-view"),
+  usersView: document.querySelector("#users-view"),
   controlsForm: document.querySelector("#controls-form"),
   userId: document.querySelector("#user-id"),
   topK: document.querySelector("#top-k"),
@@ -300,6 +375,37 @@ const elements = {
   saveBannerButton: document.querySelector("#save-banner-button"),
   resetBannerButton: document.querySelector("#reset-banner-button"),
   deleteBannerButton: document.querySelector("#delete-banner-button"),
+  userSearch: document.querySelector("#user-search"),
+  userPremiumFilter: document.querySelector("#user-premium-filter"),
+  reloadUsersButton: document.querySelector("#reload-users-button"),
+  newUserButton: document.querySelector("#new-user-button"),
+  usersTableBody: document.querySelector("#users-table-body"),
+  usersTableEmpty: document.querySelector("#users-table-empty"),
+  usersListCaption: document.querySelector("#users-list-caption"),
+  adminTotalUsers: document.querySelector("#admin-total-users"),
+  adminPremiumUsers: document.querySelector("#admin-premium-users"),
+  adminAverageAge: document.querySelector("#admin-average-age"),
+  adminSelectedUser: document.querySelector("#admin-selected-user"),
+  userForm: document.querySelector("#user-form"),
+  userFormTitle: document.querySelector("#user-form-title"),
+  userFormCaption: document.querySelector("#user-form-caption"),
+  manageUserId: document.querySelector("#manage-user-id"),
+  manageUserAge: document.querySelector("#manage-user-age"),
+  manageUserGender: document.querySelector("#manage-user-gender"),
+  manageUserCityTier: document.querySelector("#manage-user-city-tier"),
+  manageUserDeviceOs: document.querySelector("#manage-user-device-os"),
+  manageUserPlatform: document.querySelector("#manage-user-platform"),
+  manageUserIncomeBand: document.querySelector("#manage-user-income-band"),
+  manageUserActivitySegment: document.querySelector("#manage-user-activity-segment"),
+  manageUserInterest1: document.querySelector("#manage-user-interest-1"),
+  manageUserInterest2: document.querySelector("#manage-user-interest-2"),
+  manageUserInterest3: document.querySelector("#manage-user-interest-3"),
+  manageUserCountry: document.querySelector("#manage-user-country"),
+  manageUserSignupDaysAgo: document.querySelector("#manage-user-signup-days-ago"),
+  manageUserIsPremium: document.querySelector("#manage-user-is-premium"),
+  saveUserButton: document.querySelector("#save-user-button"),
+  resetUserButton: document.querySelector("#reset-user-button"),
+  deleteUserButton: document.querySelector("#delete-user-button"),
   toast: document.querySelector("#toast"),
 };
 
@@ -332,6 +438,10 @@ function formatScore(value) {
 
 function formatMoney(value) {
   return Number(value || 0).toFixed(2);
+}
+
+function formatWholeNumber(value) {
+  return String(Math.round(Number(value || 0)));
 }
 
 function storyHeadline(item, index) {
@@ -478,6 +588,39 @@ async function updateBanner(bannerId, payload) {
 
 async function deleteBanner(bannerId) {
   return requestJson(`/banners/${encodeURIComponent(bannerId)}`, {
+    method: "DELETE",
+  });
+}
+
+async function fetchUsers() {
+  const response = await requestJson("/users", {
+    method: "GET",
+  });
+  return response.users || [];
+}
+
+async function createUser(payload) {
+  return requestJson("/users", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+async function updateUser(userId, payload) {
+  return requestJson(`/users/${encodeURIComponent(userId)}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+async function deleteUser(userId) {
+  return requestJson(`/users/${encodeURIComponent(userId)}`, {
     method: "DELETE",
   });
 }
@@ -690,7 +833,12 @@ function renderMeta(response) {
     },
     {
       label: "Режим",
-      value: state.view === "admin" ? "banner admin" : "showcase",
+      value:
+        state.view === "admin"
+          ? "banner admin"
+          : state.view === "users"
+            ? "user admin"
+            : "showcase",
     },
   ];
 
@@ -856,6 +1004,40 @@ function renderBannersTable() {
     .join("");
 }
 
+function getFilteredUsers() {
+  const query = state.userSearch.trim().toLowerCase();
+  return state.users.filter((user) => {
+    const matchesPremium =
+      state.userPremiumFilter === "all"
+        ? true
+        : state.userPremiumFilter === "premium"
+          ? user.is_premium
+          : !user.is_premium;
+    if (!matchesPremium) {
+      return false;
+    }
+    if (!query) {
+      return true;
+    }
+
+    const haystack = [
+      user.user_id,
+      user.country,
+      user.platform,
+      user.device_os,
+      user.interest_1,
+      user.interest_2,
+      user.interest_3,
+      user.income_band,
+      user.activity_segment,
+    ]
+      .join(" ")
+      .toLowerCase();
+
+    return haystack.includes(query);
+  });
+}
+
 function fillBannerForm(banner) {
   elements.bannerId.value = banner.banner_id;
   elements.bannerBrand.value = banner.brand;
@@ -871,6 +1053,62 @@ function fillBannerForm(banner) {
   elements.bannerCreatedAt.value = banner.created_at;
   elements.bannerLandingPage.value = banner.landing_page;
   elements.bannerIsActive.checked = Boolean(banner.is_active);
+}
+
+function renderUsersStats() {
+  const premiumCount = state.users.filter((user) => user.is_premium).length;
+  const averageAge = state.users.length
+    ? state.users.reduce((sum, user) => sum + Number(user.age || 0), 0) / state.users.length
+    : 0;
+  const selectedUser = state.users.find((user) => user.user_id === state.selectedUserId);
+
+  elements.adminTotalUsers.textContent = String(state.users.length);
+  elements.adminPremiumUsers.textContent = String(premiumCount);
+  elements.adminAverageAge.textContent = formatWholeNumber(averageAge);
+  elements.adminSelectedUser.textContent = selectedUser ? selectedUser.user_id : "Новый";
+}
+
+function renderUsersTable() {
+  const users = getFilteredUsers();
+  elements.usersListCaption.textContent =
+    state.usersSource === "api"
+      ? `Показано ${users.length} из ${state.users.length} пользователей из backend`
+      : `Показано ${users.length} demo-пользователей во встроенном режиме`;
+
+  elements.usersTableEmpty.hidden = users.length > 0;
+  elements.usersTableBody.innerHTML = users
+    .map((user) => {
+      const isSelected = user.user_id === state.selectedUserId;
+      return `
+        <tr class="${isSelected ? "is-selected" : ""}" data-user-id="${escapeHtml(user.user_id)}">
+          <td><button class="table-link" type="button" data-select-user="${escapeHtml(user.user_id)}">${escapeHtml(user.user_id)}</button></td>
+          <td>${escapeHtml(String(user.age))}</td>
+          <td>${escapeHtml(user.gender)}</td>
+          <td>${escapeHtml(user.platform)}</td>
+          <td>${escapeHtml(user.country)}</td>
+          <td>${escapeHtml(user.income_band)}</td>
+          <td><span class="table-pill ${user.is_premium ? "is-premium" : "is-standard"}">${user.is_premium ? "premium" : "standard"}</span></td>
+        </tr>
+      `;
+    })
+    .join("");
+}
+
+function fillUserForm(user) {
+  elements.manageUserId.value = user.user_id;
+  elements.manageUserAge.value = String(user.age);
+  elements.manageUserGender.value = user.gender;
+  elements.manageUserCityTier.value = user.city_tier;
+  elements.manageUserDeviceOs.value = user.device_os;
+  elements.manageUserPlatform.value = user.platform;
+  elements.manageUserIncomeBand.value = user.income_band;
+  elements.manageUserActivitySegment.value = user.activity_segment;
+  elements.manageUserInterest1.value = user.interest_1;
+  elements.manageUserInterest2.value = user.interest_2;
+  elements.manageUserInterest3.value = user.interest_3;
+  elements.manageUserCountry.value = user.country;
+  elements.manageUserSignupDaysAgo.value = String(user.signup_days_ago);
+  elements.manageUserIsPremium.checked = Boolean(user.is_premium);
 }
 
 function resetBannerForm() {
@@ -891,6 +1129,32 @@ function resetBannerForm() {
   renderBannersTable();
 }
 
+function resetUserForm() {
+  state.selectedUserId = null;
+  state.userFormMode = "create";
+  elements.userForm.reset();
+  elements.manageUserId.value = "";
+  elements.manageUserAge.value = "25";
+  elements.manageUserGender.value = "U";
+  elements.manageUserCityTier.value = "tier_1";
+  elements.manageUserDeviceOs.value = "ios";
+  elements.manageUserPlatform.value = "mobile_app";
+  elements.manageUserIncomeBand.value = "mid";
+  elements.manageUserActivitySegment.value = "steady";
+  elements.manageUserInterest1.value = "travel";
+  elements.manageUserInterest2.value = "electronics";
+  elements.manageUserInterest3.value = "food";
+  elements.manageUserCountry.value = "RU";
+  elements.manageUserSignupDaysAgo.value = "30";
+  elements.manageUserIsPremium.checked = false;
+  elements.manageUserId.readOnly = false;
+  elements.userFormTitle.textContent = "Создать нового пользователя";
+  elements.userFormCaption.textContent = "Заполните поля и сохраните запись в backend.";
+  elements.deleteUserButton.disabled = true;
+  renderUsersStats();
+  renderUsersTable();
+}
+
 function selectBanner(bannerId) {
   const banner = state.banners.find((item) => item.banner_id === bannerId);
   if (!banner) {
@@ -907,6 +1171,24 @@ function selectBanner(bannerId) {
   elements.deleteBannerButton.disabled = false;
   renderAdminStats();
   renderBannersTable();
+}
+
+function selectUser(userId) {
+  const user = state.users.find((item) => item.user_id === userId);
+  if (!user) {
+    resetUserForm();
+    return;
+  }
+
+  state.selectedUserId = user.user_id;
+  state.userFormMode = "edit";
+  fillUserForm(user);
+  elements.manageUserId.readOnly = true;
+  elements.userFormTitle.textContent = `Редактирование ${user.user_id}`;
+  elements.userFormCaption.textContent = "Изменения сохраняются через PATCH /api/v1/users/{user_id}.";
+  elements.deleteUserButton.disabled = false;
+  renderUsersStats();
+  renderUsersTable();
 }
 
 function buildBannerPayloadFromForm() {
@@ -953,6 +1235,43 @@ function buildBannerPatchPayload(payload) {
   };
 }
 
+function buildUserPayloadFromForm() {
+  return {
+    user_id: elements.manageUserId.value.trim(),
+    age: Number(elements.manageUserAge.value),
+    gender: elements.manageUserGender.value,
+    city_tier: elements.manageUserCityTier.value.trim(),
+    device_os: elements.manageUserDeviceOs.value.trim(),
+    platform: elements.manageUserPlatform.value.trim(),
+    income_band: elements.manageUserIncomeBand.value.trim(),
+    activity_segment: elements.manageUserActivitySegment.value.trim(),
+    interest_1: elements.manageUserInterest1.value.trim(),
+    interest_2: elements.manageUserInterest2.value.trim(),
+    interest_3: elements.manageUserInterest3.value.trim(),
+    country: elements.manageUserCountry.value.trim().toUpperCase(),
+    signup_days_ago: Number(elements.manageUserSignupDaysAgo.value),
+    is_premium: elements.manageUserIsPremium.checked,
+  };
+}
+
+function buildUserPatchPayload(payload) {
+  return {
+    age: payload.age,
+    gender: payload.gender,
+    city_tier: payload.city_tier,
+    device_os: payload.device_os,
+    platform: payload.platform,
+    income_band: payload.income_band,
+    activity_segment: payload.activity_segment,
+    interest_1: payload.interest_1,
+    interest_2: payload.interest_2,
+    interest_3: payload.interest_3,
+    country: payload.country,
+    signup_days_ago: payload.signup_days_ago,
+    is_premium: payload.is_premium,
+  };
+}
+
 function syncBannerIntoState(savedBanner) {
   const normalized = {
     ...savedBanner,
@@ -964,6 +1283,15 @@ function syncBannerIntoState(savedBanner) {
     state.banners = [normalized, ...state.banners];
   } else {
     state.banners[index] = normalized;
+  }
+}
+
+function syncUserIntoState(savedUser) {
+  const index = state.users.findIndex((item) => item.user_id === savedUser.user_id);
+  if (index === -1) {
+    state.users = [savedUser, ...state.users];
+  } else {
+    state.users[index] = savedUser;
   }
 }
 
@@ -1026,17 +1354,53 @@ async function loadBanners({ preserveSelection = true } = {}) {
   }
 }
 
+async function loadUsers({ preserveSelection = true } = {}) {
+  elements.reloadUsersButton.disabled = true;
+  elements.newUserButton.disabled = true;
+  setStatus("Syncing users", "");
+
+  const previousSelection = preserveSelection ? state.selectedUserId : null;
+
+  try {
+    state.users = await fetchUsers();
+    state.usersSource = "api";
+    setStatus("Users synced", "ok");
+  } catch (error) {
+    state.users = [...DEMO_USERS];
+    state.usersSource = "demo";
+    setStatus("Demo users", "demo");
+    console.warn("Failed to fetch users, using demo users:", error);
+    showToast(`Users fallback: ${error.message}`, "warning");
+  } finally {
+    renderUsersStats();
+    renderUsersTable();
+    if (previousSelection && state.users.some((user) => user.user_id === previousSelection)) {
+      selectUser(previousSelection);
+    } else {
+      resetUserForm();
+    }
+    elements.reloadUsersButton.disabled = false;
+    elements.newUserButton.disabled = false;
+  }
+}
+
 function switchView(view) {
   state.view = view;
   const isShowcase = view === "showcase";
+  const isBannerAdmin = view === "admin";
+  const isUsersAdmin = view === "users";
   elements.showcaseView.hidden = !isShowcase;
-  elements.adminView.hidden = isShowcase;
+  elements.adminView.hidden = !isBannerAdmin;
+  elements.usersView.hidden = !isUsersAdmin;
   elements.showcaseView.classList.toggle("is-active", isShowcase);
-  elements.adminView.classList.toggle("is-active", !isShowcase);
+  elements.adminView.classList.toggle("is-active", isBannerAdmin);
+  elements.usersView.classList.toggle("is-active", isUsersAdmin);
   elements.showcaseTab.classList.toggle("is-active", isShowcase);
-  elements.adminTab.classList.toggle("is-active", !isShowcase);
+  elements.adminTab.classList.toggle("is-active", isBannerAdmin);
+  elements.usersTab.classList.toggle("is-active", isUsersAdmin);
   elements.showcaseTab.setAttribute("aria-selected", String(isShowcase));
-  elements.adminTab.setAttribute("aria-selected", String(!isShowcase));
+  elements.adminTab.setAttribute("aria-selected", String(isBannerAdmin));
+  elements.usersTab.setAttribute("aria-selected", String(isUsersAdmin));
   renderMeta(state.response);
 }
 
@@ -1096,6 +1460,60 @@ async function handleDeleteBanner() {
   }
 }
 
+async function handleUserSubmit(event) {
+  event.preventDefault();
+  const payload = buildUserPayloadFromForm();
+  elements.saveUserButton.disabled = true;
+
+  try {
+    if (state.userFormMode === "create") {
+      const saved = await createUser(payload);
+      syncUserIntoState(saved);
+      state.usersSource = "api";
+      selectUser(saved.user_id);
+      showToast(`Пользователь ${saved.user_id} создан`, "success");
+    } else {
+      const saved = await updateUser(payload.user_id, buildUserPatchPayload(payload));
+      syncUserIntoState(saved);
+      state.usersSource = "api";
+      selectUser(saved.user_id);
+      showToast(`Пользователь ${saved.user_id} обновлен`, "success");
+    }
+  } catch (error) {
+    showToast(`Не удалось сохранить пользователя: ${error.message}`, "error");
+  } finally {
+    renderUsersStats();
+    renderUsersTable();
+    elements.saveUserButton.disabled = false;
+  }
+}
+
+async function handleDeleteUser() {
+  if (!state.selectedUserId) {
+    return;
+  }
+
+  const userId = state.selectedUserId;
+  const confirmed = window.confirm(`Удалить пользователя ${userId}?`);
+  if (!confirmed) {
+    return;
+  }
+
+  elements.deleteUserButton.disabled = true;
+  try {
+    await deleteUser(userId);
+    state.users = state.users.filter((user) => user.user_id !== userId);
+    resetUserForm();
+    showToast(`Пользователь ${userId} удален`, "success");
+  } catch (error) {
+    showToast(`Не удалось удалить пользователя: ${error.message}`, "error");
+  } finally {
+    renderUsersStats();
+    renderUsersTable();
+    elements.deleteUserButton.disabled = state.userFormMode !== "edit";
+  }
+}
+
 function activateQuickUsers() {
   document.querySelectorAll("[data-user-id]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -1129,6 +1547,10 @@ function bindEvents() {
 
   elements.adminTab.addEventListener("click", () => {
     switchView("admin");
+  });
+
+  elements.usersTab.addEventListener("click", () => {
+    switchView("users");
   });
 
   elements.bannerSearch.addEventListener("input", (event) => {
@@ -1166,6 +1588,41 @@ function bindEvents() {
     selectBanner(button.dataset.selectBanner);
   });
 
+  elements.userSearch.addEventListener("input", (event) => {
+    state.userSearch = event.target.value;
+    renderUsersTable();
+  });
+
+  elements.userPremiumFilter.addEventListener("change", (event) => {
+    state.userPremiumFilter = event.target.value;
+    renderUsersTable();
+  });
+
+  elements.reloadUsersButton.addEventListener("click", () => {
+    loadUsers();
+  });
+
+  elements.newUserButton.addEventListener("click", () => {
+    resetUserForm();
+    showToast("Форма готова для создания нового пользователя", "info");
+  });
+
+  elements.userForm.addEventListener("submit", handleUserSubmit);
+
+  elements.resetUserButton.addEventListener("click", () => {
+    resetUserForm();
+  });
+
+  elements.deleteUserButton.addEventListener("click", handleDeleteUser);
+
+  elements.usersTableBody.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-select-user]");
+    if (!button) {
+      return;
+    }
+    selectUser(button.dataset.selectUser);
+  });
+
   activateQuickUsers();
 }
 
@@ -1173,11 +1630,15 @@ function initialize() {
   bindEvents();
   renderPlacements();
   resetBannerForm();
+  resetUserForm();
   renderShowcase(state.response, buildRequestPayload());
   renderAdminStats();
   renderBannersTable();
+  renderUsersStats();
+  renderUsersTable();
   loadRecommendations();
   loadBanners({ preserveSelection: false });
+  loadUsers({ preserveSelection: false });
 }
 
 initialize();
