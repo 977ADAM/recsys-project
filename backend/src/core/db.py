@@ -7,7 +7,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.src.core.config import Settings
-from backend.src.models import event  # noqa: F401
+from backend.src.core.models import event  # noqa: F401
 
 
 @lru_cache(maxsize=1)
