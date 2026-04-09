@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 
-from backend.src.core.models.users import User
+from backend.src.repository.models.users import User
 from backend.src.repository.users import (
     create_user as repo_create_user,
     get_by_email as repo_get_by_email,

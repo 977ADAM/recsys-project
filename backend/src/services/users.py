@@ -1,5 +1,5 @@
-from backend.src.core.models.users import User
-from backend.src.core.schemas.users import UserCreate
+from backend.src.repository.models.users import User
+from backend.src.core.schemas.users import UserCreate, Users
 from backend.src.repository.repo import UserRepository
 from backend.src.core.errors.common import EmailAlreadyRegisteredError
 from collections.abc import Callable
@@ -20,3 +20,9 @@ def create_user(
         full_name=user.full_name,
         hashed_password=password_hasher(user.password),
     )
+
+
+def get_users(
+    repo: UserRepository,
+) -> Users:
+    return repo.get_users()

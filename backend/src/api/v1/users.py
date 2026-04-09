@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from backend.src.api.deps import get_db
 from backend.src.core.errors.common import EmailAlreadyRegisteredError
-from backend.src.core.schemas.users import UserCreate, UserRead
+from backend.src.core.schemas.users import UserCreate, User
 from backend.src.repository.repo import UserRepository
 from backend.src.services.service import UsersService
 
@@ -14,7 +14,7 @@ router = APIRouter(prefix="/users", tags=["users"])
 
 @router.post(
     "",
-    response_model=UserRead,
+    response_model=User,
     status_code=status.HTTP_201_CREATED,
 )
 def create_user(

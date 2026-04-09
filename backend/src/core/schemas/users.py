@@ -7,7 +7,11 @@ class UserCreate(BaseModel):
     full_name: str
 
 
-class UserRead(BaseModel):
+class User(BaseModel):
     id: int
     email: EmailStr
     full_name: str
+
+
+class Users(BaseModel):
+    users: list[User]
