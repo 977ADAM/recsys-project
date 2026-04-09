@@ -1,5 +1,0 @@
-fastapi[standard]>=0.135.3
-psycopg[binary]>=3.2.9
-redis>=6.4.0
-sqlalchemy>=2.0.43
-psycopg>=3.3.3
