@@ -1,0 +1,26 @@
+from sqlalchemy.orm import Session
+
+from src.core.models.users import User
+from src.repo.users import create_user, get_by_email
+
+
+class UserRepository:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def get_by_email(self, email: str) -> User | None:
+        return get_by_email(self.db, email)
+
+    def create_user(
+        self,
+        *,
+        email: str,
+        full_name: str,
+        hashed_password: str,
+    ) -> User:
+        return create_user(
+            db = self.db,
+            email = email,
+            full_name = full_name,
+            hashed_password = hashed_password
+            )

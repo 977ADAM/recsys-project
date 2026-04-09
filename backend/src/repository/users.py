@@ -1,18 +1,15 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from src.core.models.users import User
+from backend.src.core.models.users import User
 
-
-
-
-def get_by_email(repo, email: str) -> User | None:
-    return self.db.execute(
+def get_by_email(db: Session, email: str) -> User | None:
+    return db.execute(
         select(User).where(User.email == email)
     ).scalar_one_or_none()
 
-def create(
-    self,
+def create_user(
+    db: Session,
     *,
     email: str,
     full_name: str,
@@ -23,7 +20,7 @@ def create(
         full_name=full_name,
         hashed_password=hashed_password,
     )
-    self.db.add(user)
-    self.db.commit()
-    self.db.refresh(user)
+    db.add(user)
+    db.commit()
+    db.refresh(user)
     return user
