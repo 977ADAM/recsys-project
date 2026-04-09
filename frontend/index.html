@@ -6,7 +6,7 @@
     <title>Pulse Ledger</title>
     <meta
       name="description"
-      content="Новостной frontend-витрина с рекламными слотами и нативными баннерными вставками."
+      content="Витрина рекомендаций и web-админка для CRUD-управления баннерами."
     />
     <link rel="stylesheet" href="./styles.css" />
     <script src="./app.js" defer></script>
@@ -15,177 +15,456 @@
     <div class="page-shell">
       <header class="site-header">
         <div class="topline">
-          <span>Персонализированная редакция</span>
-          <span id="api-status" class="status-chip">Local mode</span>
+          <span>Recsys banner console</span>
+          <span id="api-status" class="status-chip">Booting</span>
         </div>
+
         <div class="masthead">
-          <div>
-            <p class="eyebrow">Newsroom UI for Recsys</p>
+          <div class="masthead-copy">
+            <p class="eyebrow">Frontend + Admin Desk</p>
             <h1>Pulse Ledger</h1>
             <p class="subtitle">
-              Новостная витрина для баннерного проекта: лента, партнерские материалы и
-              готовые места под размещение баннеров.
+              Одна web-поверхность для просмотра рекомендательной выдачи, проверки рекламных
+              слотов и полноценного CRUD-редактирования баннеров через backend API.
             </p>
           </div>
+
           <div class="masthead-actions">
             <button id="refresh-button" class="button button-primary" type="button">
-              Обновить ленту
+              Обновить витрину
             </button>
             <button id="demo-button" class="button button-secondary" type="button">
-              Пересобрать ленту
+              Demo режим
             </button>
           </div>
         </div>
+
+        <div class="view-switcher" role="tablist" aria-label="Sections">
+          <button
+            id="showcase-tab"
+            class="view-tab is-active"
+            type="button"
+            role="tab"
+            aria-selected="true"
+            data-view="showcase"
+          >
+            Showcase
+          </button>
+          <button
+            id="admin-tab"
+            class="view-tab"
+            type="button"
+            role="tab"
+            aria-selected="false"
+            data-view="admin"
+          >
+            Banner Admin
+          </button>
+        </div>
+
         <nav class="section-strip" aria-label="Разделы">
-          <span>Главное</span>
-          <span>Технологии</span>
-          <span>Ритейл</span>
-          <span>Путешествия</span>
-          <span>Образование</span>
-          <span>Партнерские истории</span>
+          <span>Рекомендации</span>
+          <span>Нативная лента</span>
+          <span>Партнерские слоты</span>
+          <span>Таблица баннеров</span>
+          <span>Создание и редактирование</span>
+          <span>Быстрый workflow для QA</span>
         </nav>
       </header>
 
       <main class="main-layout">
-        <section class="control-panel panel reveal">
-          <div class="section-title">
-            <div>
-              <p class="kicker">Control Desk</p>
-              <h2>Настройки запроса</h2>
-            </div>
-            <p class="section-note">Сейчас витрина работает автономно, без `inference_service`, и собирает ленту локально.</p>
-          </div>
-
-          <form id="controls-form" class="controls-grid">
-            <label>
-              <span>User ID</span>
-              <input id="user-id" name="userId" type="text" value="u_00007" />
-            </label>
-            <label>
-              <span>Top K</span>
-              <input id="top-k" name="topK" type="number" min="3" max="24" value="8" />
-            </label>
-            <label>
-              <span>Candidate mode</span>
-              <select id="candidate-mode" name="candidateMode">
-                <option value="retrieval + ranking" selected>retrieval + ranking</option>
-                <option value="all banners">all banners</option>
-              </select>
-            </label>
-            <label>
-              <span>Score mode</span>
-              <select id="score-mode" name="scoreMode">
-                <option value="value" selected>value</option>
-                <option value="ctr">ctr</option>
-              </select>
-            </label>
-            <label>
-              <span>Retrieval top N</span>
-              <input id="retrieval-top-n" name="retrievalTopN" type="number" min="10" max="300" value="60" />
-            </label>
-            <label class="toggle">
-              <input id="only-active" name="onlyActive" type="checkbox" checked />
-              <span>Только активные баннеры</span>
-            </label>
-            <label class="toggle">
-              <input id="exclude-seen" name="excludeSeen" type="checkbox" checked />
-              <span>Скрывать уже показанные</span>
-            </label>
-            <div class="controls-actions">
-              <button class="button button-primary" type="submit">Обновить витрину</button>
-            </div>
-          </form>
-
-          <div class="quick-users">
-            <span>Быстрые профили:</span>
-            <button class="chip" type="button" data-user-id="u_00007">u_00007</button>
-            <button class="chip" type="button" data-user-id="u_00021">u_00021</button>
-            <button class="chip" type="button" data-user-id="u_00032">u_00032</button>
-            <button class="chip" type="button" data-user-id="u_00057">u_00057</button>
-          </div>
-        </section>
-
-        <section class="leaderboard-slot ad-slot reveal" data-slot="leaderboard">
-          <div>
-            <p class="slot-label">Ad Slot 970x250</p>
-            <h3>Верхний leaderboard</h3>
-            <p>Место для крупного баннера над главным материалом или для takeover-кампании.</p>
-          </div>
-          <div class="slot-code">insert GAM / AdFox / custom HTML</div>
-        </section>
-
-        <section class="hero-layout reveal">
-          <article id="hero-story" class="hero-story panel"></article>
-          <aside id="news-briefing" class="news-briefing panel"></aside>
-        </section>
-
-        <section class="content-layout">
-          <section class="feed-column">
-            <div class="section-title reveal">
+        <section id="showcase-view" class="view-section is-active" aria-labelledby="showcase-tab">
+          <section class="control-panel panel reveal">
+            <div class="section-title">
               <div>
-                <p class="kicker">Personal Feed</p>
-                <h2>Нативная лента</h2>
+                <p class="kicker">Control Desk</p>
+                <h2>Параметры рекомендаций</h2>
               </div>
-              <p class="section-note">Карточки ниже рендерятся из рекомендаций и стилизованы как редакционные материалы.</p>
+              <p class="section-note">
+                Форма ниже бьет в `/api/v1/recommendations`, а если backend недоступен,
+                витрина переключается в локальный fallback.
+              </p>
             </div>
-            <div id="feed-grid" class="feed-grid"></div>
-            <section id="midroll-slot" class="ad-slot ad-slot-inline reveal" data-slot="midroll"></section>
-            <section id="native-band" class="native-band reveal"></section>
+
+            <form id="controls-form" class="controls-grid">
+              <label>
+                <span>User ID</span>
+                <input id="user-id" name="userId" type="text" value="u_00007" />
+              </label>
+              <label>
+                <span>Top K</span>
+                <input id="top-k" name="topK" type="number" min="1" max="24" value="8" />
+              </label>
+              <label>
+                <span>Candidate mode</span>
+                <select id="candidate-mode" name="candidateMode">
+                  <option value="retrieval + ranking" selected>retrieval + ranking</option>
+                  <option value="all banners">all banners</option>
+                </select>
+              </label>
+              <label>
+                <span>Score mode</span>
+                <select id="score-mode" name="scoreMode">
+                  <option value="value" selected>value</option>
+                  <option value="ctr">ctr</option>
+                </select>
+              </label>
+              <label>
+                <span>Retrieval top N</span>
+                <input
+                  id="retrieval-top-n"
+                  name="retrievalTopN"
+                  type="number"
+                  min="1"
+                  max="300"
+                  value="60"
+                />
+              </label>
+              <label class="toggle">
+                <input id="only-active" name="onlyActive" type="checkbox" checked />
+                <span>Только активные</span>
+              </label>
+              <label class="toggle">
+                <input id="exclude-seen" name="excludeSeen" type="checkbox" checked />
+                <span>Скрывать seen</span>
+              </label>
+              <div class="controls-actions">
+                <button class="button button-primary" type="submit">Пересчитать выдачу</button>
+              </div>
+            </form>
+
+            <div class="quick-users">
+              <span>Быстрые профили:</span>
+              <button class="chip" type="button" data-user-id="u_00007">u_00007</button>
+              <button class="chip" type="button" data-user-id="u_00021">u_00021</button>
+              <button class="chip" type="button" data-user-id="u_00032">u_00032</button>
+              <button class="chip" type="button" data-user-id="u_00057">u_00057</button>
+            </div>
           </section>
 
-          <aside class="sidebar-column">
-            <section class="panel reveal">
-              <div class="section-title compact">
+          <section class="overview-grid reveal">
+            <article class="overview-card">
+              <p class="slot-label">Feed Snapshot</p>
+              <h3 id="recommendations-count">0 карточек</h3>
+              <p id="recommendations-source" class="overview-copy">Ожидание ответа</p>
+            </article>
+            <article class="overview-card">
+              <p class="slot-label">Top Brand</p>
+              <h3 id="top-brand">-</h3>
+              <p id="top-brand-copy" class="overview-copy">Бренд из первой позиции выдачи</p>
+            </article>
+            <article class="overview-card">
+              <p class="slot-label">Average CTR</p>
+              <h3 id="average-ctr">0%</h3>
+              <p class="overview-copy">Средний CTR по рендеру на странице</p>
+            </article>
+            <article class="overview-card">
+              <p class="slot-label">Active Inventory</p>
+              <h3 id="inventory-total">0</h3>
+              <p id="inventory-copy" class="overview-copy">Количество баннеров в inventory</p>
+            </article>
+          </section>
+
+          <section class="leaderboard-slot ad-slot reveal" data-slot="leaderboard">
+            <div>
+              <p class="slot-label">Ad Slot 970x250</p>
+              <h3>Верхний leaderboard</h3>
+              <p>Зона для takeover-кампании или крупного редакционного промо.</p>
+            </div>
+            <div id="leaderboard-code" class="slot-code">inventory syncing...</div>
+          </section>
+
+          <section class="hero-layout reveal">
+            <article id="hero-story" class="hero-story panel"></article>
+            <aside id="news-briefing" class="news-briefing panel"></aside>
+          </section>
+
+          <section class="content-layout">
+            <section class="feed-column">
+              <div class="section-title reveal">
                 <div>
-                  <p class="kicker">Audience Snapshot</p>
-                  <h2>Профиль выдачи</h2>
+                  <p class="kicker">Personal Feed</p>
+                  <h2>Нативная лента</h2>
                 </div>
+                <p class="section-note">
+                  Здесь виден пользовательский результат ранжирования и то, как баннеры выглядят в
+                  витринном формате.
+                </p>
               </div>
-              <div id="profile-card" class="profile-card"></div>
+
+              <div id="feed-grid" class="feed-grid"></div>
+              <section id="midroll-slot" class="ad-slot ad-slot-inline reveal" data-slot="midroll"></section>
+              <section id="native-band" class="native-band reveal"></section>
             </section>
 
-            <section class="panel reveal">
-              <div class="section-title compact">
-                <div>
-                  <p class="kicker">Sponsored Rail</p>
-                  <h2>Партнерские блоки</h2>
+            <aside class="sidebar-column">
+              <section class="panel reveal">
+                <div class="section-title compact">
+                  <div>
+                    <p class="kicker">Audience Snapshot</p>
+                    <h2>Профиль выдачи</h2>
+                  </div>
                 </div>
-              </div>
-              <div id="sponsored-rail" class="sponsored-rail"></div>
-            </section>
+                <div id="profile-card" class="profile-card"></div>
+              </section>
 
-            <section class="ad-slot ad-slot-rail reveal" data-slot="right-rail">
+              <section class="panel reveal">
+                <div class="section-title compact">
+                  <div>
+                    <p class="kicker">Sponsored Rail</p>
+                    <h2>Партнерские блоки</h2>
+                  </div>
+                </div>
+                <div id="sponsored-rail" class="sponsored-rail"></div>
+              </section>
+
+              <section class="ad-slot ad-slot-rail reveal" data-slot="right-rail">
+                <div>
+                  <p class="slot-label">Ad Slot 300x600</p>
+                  <h3>Sticky right rail</h3>
+                  <p>Подходит для долгих кампаний, ретаргетинга и повторных касаний.</p>
+                </div>
+                <div id="rail-code" class="slot-code">awaiting inventory</div>
+              </section>
+            </aside>
+          </section>
+
+          <section class="placements panel reveal">
+            <div class="section-title">
               <div>
-                <p class="slot-label">Ad Slot 300x600</p>
-                <h3>Sticky right rail</h3>
-                <p>Подходит для долгих охватных кампаний, бренд-лифтов и ремаркетинга.</p>
+                <p class="kicker">Placement Map</p>
+                <h2>Карта размещений</h2>
               </div>
-              <div class="slot-code">sticky sidebar creative</div>
+              <p class="section-note">Рекламные точки, уже встроенные в этот web-макет.</p>
+            </div>
+            <div id="placement-grid" class="placement-grid"></div>
+          </section>
+
+          <section class="panel reveal">
+            <div class="section-title compact">
+              <div>
+                <p class="kicker">Response Meta</p>
+                <h2>Состояние модели</h2>
+              </div>
+            </div>
+            <div id="meta-grid" class="meta-grid"></div>
+          </section>
+        </section>
+
+        <section id="admin-view" class="view-section" aria-labelledby="admin-tab" hidden>
+          <section class="panel admin-hero reveal">
+            <div class="section-title">
+              <div>
+                <p class="kicker">Banner Admin</p>
+                <h2>CRUD и ручное редактирование inventory</h2>
+              </div>
+              <p class="section-note">
+                Таблица ниже работает с `/api/v1/banners`: можно создать баннер, обновить поля,
+                быстро деактивировать запись или удалить её совсем.
+              </p>
+            </div>
+
+            <div class="admin-toolbar">
+              <label class="search-input">
+                <span>Поиск</span>
+                <input
+                  id="banner-search"
+                  type="search"
+                  placeholder="banner id, brand, category..."
+                />
+              </label>
+
+              <label>
+                <span>Статус</span>
+                <select id="banner-status-filter">
+                  <option value="all">Все баннеры</option>
+                  <option value="active">Только активные</option>
+                  <option value="inactive">Только выключенные</option>
+                </select>
+              </label>
+
+              <div class="toolbar-actions">
+                <button id="reload-banners-button" class="button button-secondary" type="button">
+                  Обновить список
+                </button>
+                <button id="new-banner-button" class="button button-primary" type="button">
+                  Новый баннер
+                </button>
+              </div>
+            </div>
+
+            <div class="overview-grid admin-stats">
+              <article class="overview-card">
+                <p class="slot-label">All Banners</p>
+                <h3 id="admin-total-banners">0</h3>
+                <p class="overview-copy">Всего записей в backend</p>
+              </article>
+              <article class="overview-card">
+                <p class="slot-label">Active</p>
+                <h3 id="admin-active-banners">0</h3>
+                <p class="overview-copy">Активные кампании</p>
+              </article>
+              <article class="overview-card">
+                <p class="slot-label">Average CPM</p>
+                <h3 id="admin-average-cpm">0.00</h3>
+                <p class="overview-copy">Средний bid по inventory</p>
+              </article>
+              <article class="overview-card">
+                <p class="slot-label">Selected</p>
+                <h3 id="admin-selected-banner">Новый</h3>
+                <p class="overview-copy">Текущий объект редактирования</p>
+              </article>
+            </div>
+          </section>
+
+          <section class="admin-layout">
+            <section class="panel admin-list-panel reveal">
+              <div class="section-title compact">
+                <div>
+                  <p class="kicker">Inventory</p>
+                  <h2>Список баннеров</h2>
+                </div>
+                <p id="banners-list-caption" class="section-note">Загрузка списка...</p>
+              </div>
+
+              <div id="banners-table-empty" class="empty-state" hidden>
+                <p>По текущим фильтрам баннеров не найдено.</p>
+              </div>
+
+              <div class="table-wrap">
+                <table class="banner-table">
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Brand</th>
+                      <th>Category</th>
+                      <th>Format</th>
+                      <th>Goal</th>
+                      <th>CPM</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody id="banners-table-body"></tbody>
+                </table>
+              </div>
             </section>
-          </aside>
-        </section>
 
-        <section class="placements panel reveal">
-          <div class="section-title">
-            <div>
-              <p class="kicker">Placement Map</p>
-              <h2>Куда размещать баннеры</h2>
-            </div>
-            <p class="section-note">Сетка ниже показывает рекламные точки, которые уже встроены в макет.</p>
-          </div>
-          <div id="placement-grid" class="placement-grid"></div>
-        </section>
+            <section class="panel admin-form-panel reveal">
+              <div class="section-title compact">
+                <div>
+                  <p class="kicker">Editor</p>
+                  <h2 id="banner-form-title">Создать новый баннер</h2>
+                </div>
+                <p id="banner-form-caption" class="section-note">
+                  Заполните поля и сохраните запись в backend.
+                </p>
+              </div>
 
-        <section class="panel reveal">
-          <div class="section-title compact">
-            <div>
-              <p class="kicker">Response Meta</p>
-              <h2>Состояние модели</h2>
-            </div>
-          </div>
-          <div id="meta-grid" class="meta-grid"></div>
+              <form id="banner-form" class="banner-form-grid">
+                <label>
+                  <span>Banner ID</span>
+                  <input id="banner-id" name="banner_id" type="text" maxlength="20" required />
+                </label>
+                <label>
+                  <span>Brand</span>
+                  <input id="banner-brand" name="brand" type="text" maxlength="50" required />
+                </label>
+                <label>
+                  <span>Category</span>
+                  <input id="banner-category" name="category" type="text" maxlength="50" required />
+                </label>
+                <label>
+                  <span>Subcategory</span>
+                  <input
+                    id="banner-subcategory"
+                    name="subcategory"
+                    type="text"
+                    maxlength="100"
+                    required
+                  />
+                </label>
+                <label>
+                  <span>Format</span>
+                  <select id="banner-format" name="banner_format" required>
+                    <option value="static">static</option>
+                    <option value="native">native</option>
+                    <option value="animated">animated</option>
+                    <option value="video">video</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Goal</span>
+                  <select id="banner-goal" name="campaign_goal" required>
+                    <option value="awareness">awareness</option>
+                    <option value="app_install">app_install</option>
+                    <option value="purchase">purchase</option>
+                    <option value="traffic">traffic</option>
+                    <option value="lead_gen">lead_gen</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Target gender</span>
+                  <select id="banner-gender" name="target_gender" required>
+                    <option value="U">U</option>
+                    <option value="M">M</option>
+                    <option value="F">F</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Age min</span>
+                  <input id="banner-age-min" name="target_age_min" type="number" min="0" required />
+                </label>
+                <label>
+                  <span>Age max</span>
+                  <input id="banner-age-max" name="target_age_max" type="number" min="0" required />
+                </label>
+                <label>
+                  <span>CPM bid</span>
+                  <input id="banner-cpm" name="cpm_bid" type="number" min="0" step="0.01" required />
+                </label>
+                <label>
+                  <span>Quality score</span>
+                  <input
+                    id="banner-quality"
+                    name="quality_score"
+                    type="number"
+                    min="0"
+                    max="1"
+                    step="0.001"
+                    required
+                  />
+                </label>
+                <label>
+                  <span>Created at</span>
+                  <input id="banner-created-at" name="created_at" type="date" required />
+                </label>
+                <label class="wide-field">
+                  <span>Landing page</span>
+                  <input id="banner-landing-page" name="landing_page" type="url" required />
+                </label>
+                <label class="toggle">
+                  <input id="banner-is-active" name="is_active" type="checkbox" checked />
+                  <span>Баннер активен</span>
+                </label>
+
+                <div class="banner-form-actions">
+                  <button id="save-banner-button" class="button button-primary" type="submit">
+                    Сохранить баннер
+                  </button>
+                  <button id="reset-banner-button" class="button button-secondary" type="button">
+                    Очистить форму
+                  </button>
+                  <button id="delete-banner-button" class="button button-danger" type="button">
+                    Удалить
+                  </button>
+                </div>
+              </form>
+            </section>
+          </section>
         </section>
       </main>
     </div>
+
+    <div id="toast" class="toast" hidden></div>
   </body>
 </html>
