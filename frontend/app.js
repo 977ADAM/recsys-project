@@ -5,6 +5,102 @@ const DEMO_RESPONSE = {
   online_state_applied: false,
   top_k: 8,
   items: [
+    {
+      banner_id: "bnr_demo_001",
+      brand: "SkyJet",
+      category: "travel",
+      subcategory: "car_rental",
+      banner_format: "native",
+      campaign_goal: "traffic",
+      pred_ctr: 0.081,
+      final_score: 0.912,
+      cpm_bid: 182.4,
+      quality_score: 0.947,
+      age_match: 1,
+      gender_match: 1,
+      interest_match_any: 1,
+      interest_match_count: 3,
+      banner_ctr_prior: 0.063,
+      user_ctr_prior: 0.052,
+      user_subcategory_ctr_prior: 0.071,
+      user_banner_ctr_prior: 0.048,
+      served_impressions_total: 18420,
+      served_clicks_total: 931,
+      is_active: 1,
+      landing_page: "https://example.com/travel/car-rental/skyjet",
+    },
+    {
+      banner_id: "bnr_demo_002",
+      brand: "PixelOne",
+      category: "electronics",
+      subcategory: "smartphones",
+      banner_format: "banner",
+      campaign_goal: "conversion",
+      pred_ctr: 0.067,
+      final_score: 0.861,
+      cpm_bid: 205.15,
+      quality_score: 0.918,
+      age_match: 1,
+      gender_match: 1,
+      interest_match_any: 1,
+      interest_match_count: 2,
+      banner_ctr_prior: 0.059,
+      user_ctr_prior: 0.052,
+      user_subcategory_ctr_prior: 0.064,
+      user_banner_ctr_prior: 0.045,
+      served_impressions_total: 15280,
+      served_clicks_total: 774,
+      is_active: 1,
+      landing_page: "https://example.com/electronics/smartphones/pixelone",
+    },
+    {
+      banner_id: "bnr_demo_003",
+      brand: "CodeSpring",
+      category: "education",
+      subcategory: "coding",
+      banner_format: "native",
+      campaign_goal: "traffic",
+      pred_ctr: 0.059,
+      final_score: 0.833,
+      cpm_bid: 168.9,
+      quality_score: 0.902,
+      age_match: 1,
+      gender_match: 1,
+      interest_match_any: 1,
+      interest_match_count: 4,
+      banner_ctr_prior: 0.055,
+      user_ctr_prior: 0.052,
+      user_subcategory_ctr_prior: 0.073,
+      user_banner_ctr_prior: 0.038,
+      served_impressions_total: 12840,
+      served_clicks_total: 609,
+      is_active: 1,
+      landing_page: "https://example.com/education/coding/codespring",
+    },
+    {
+      banner_id: "bnr_demo_004",
+      brand: "CityBite",
+      category: "food",
+      subcategory: "snacks",
+      banner_format: "banner",
+      campaign_goal: "awareness",
+      pred_ctr: 0.043,
+      final_score: 0.741,
+      cpm_bid: 121.6,
+      quality_score: 0.876,
+      age_match: 1,
+      gender_match: 1,
+      interest_match_any: 1,
+      interest_match_count: 1,
+      banner_ctr_prior: 0.041,
+      user_ctr_prior: 0.052,
+      user_subcategory_ctr_prior: 0.039,
+      user_banner_ctr_prior: 0.031,
+      served_impressions_total: 21400,
+      served_clicks_total: 801,
+      is_active: 1,
+      landing_page: "https://example.com/food/snacks/citybite",
+    },
   ],
 };
 
@@ -57,6 +153,7 @@ const placementBlueprint = [
 const state = {
   response: DEMO_RESPONSE,
   source: "demo",
+  requestInFlight: false,
 };
 
 const elements = {
@@ -117,7 +214,7 @@ function storySummary(item) {
 }
 
 function buildUrl(item) {
-  return `https://example.com/${item.category}/${item.subcategory}/${item.brand.toLowerCase()}`;
+  return item.landing_page || `https://example.com/${item.category}/${item.subcategory}/${item.brand.toLowerCase()}`;
 }
 
 function buildRequestPayload() {
@@ -157,6 +254,31 @@ function buildLocalResponse(payload) {
   };
 }
 
+async function fetchRecommendations(payload) {
+  const response = await fetch("/api/v1/recommendations", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    let detail = `HTTP ${response.status}`;
+    try {
+      const errorPayload = await response.json();
+      if (errorPayload?.detail) {
+        detail = errorPayload.detail;
+      }
+    } catch {
+      // Leave the generic message when the server doesn't return JSON.
+    }
+    throw new Error(detail);
+  }
+
+  return response.json();
+}
+
 function setStatus(label, className) {
   elements.apiStatus.textContent = label;
   elements.apiStatus.className = `status-chip ${className}`.trim();
@@ -173,7 +295,13 @@ function escapeHtml(value) {
 
 function renderHero(item) {
   if (!item) {
-    elements.heroStory.innerHTML = "";
+    elements.heroStory.innerHTML = `
+      <div class="empty-state empty-state-hero">
+        <p class="slot-label">Главная история</p>
+        <h2 class="hero-headline">Рекомендации пока не пришли</h2>
+        <p class="hero-summary">Измените параметры запроса или проверьте, что backend с данными доступен.</p>
+      </div>
+    `;
     return;
   }
 
@@ -222,12 +350,14 @@ function renderBriefing(items) {
         <h2>Что еще в выдаче</h2>
       </div>
     </div>
-    <div class="briefing-list">${content}</div>
+    <div class="briefing-list">
+      ${content || '<div class="empty-state"><p>Дополнительных рекомендаций пока нет.</p></div>'}
+    </div>
   `;
 }
 
 function renderFeed(items) {
-  elements.feedGrid.innerHTML = items
+  const content = items
     .slice(1)
     .map(
       (item, index) => `
@@ -257,10 +387,18 @@ function renderFeed(items) {
       `,
     )
     .join("");
+
+  elements.feedGrid.innerHTML = content || `
+    <article class="story-card story-card-empty">
+      <p class="slot-label">Feed Empty</p>
+      <h3 class="story-headline">Лента пока пустая</h3>
+      <p class="story-summary">Сервер не вернул карточки для текущего профиля. Попробуйте другой user id или ослабьте фильтры.</p>
+    </article>
+  `;
 }
 
 function renderNativeBand(items) {
-  elements.nativeBand.innerHTML = items
+  const content = items
     .slice(0, 3)
     .map(
       (item) => `
@@ -272,10 +410,13 @@ function renderNativeBand(items) {
       `,
     )
     .join("");
+
+  elements.nativeBand.innerHTML =
+    content || '<article class="native-card"><p>Нативные интеграции появятся здесь, когда в ответе будут рекомендации.</p></article>';
 }
 
 function renderSponsoredRail(items) {
-  elements.sponsoredRail.innerHTML = items
+  const content = items
     .slice(0, 3)
     .map(
       (item) => `
@@ -287,6 +428,9 @@ function renderSponsoredRail(items) {
       `,
     )
     .join("");
+
+  elements.sponsoredRail.innerHTML =
+    content || '<article class="sponsored-card"><p class="sponsored-copy">Партнерские блоки пока пусты. Можно загрузить данные из API или использовать локальный demo-режим.</p></article>';
 }
 
 function renderProfile(response, requestPayload) {
@@ -329,7 +473,12 @@ function renderMeta(response) {
   const items = [
     {
       label: "Источник",
-      value: state.source === "local" ? "local showcase" : "demo fallback",
+      value:
+        state.source === "api"
+          ? "backend api"
+          : state.source === "local"
+            ? "local fallback"
+            : "demo showcase",
     },
     {
       label: "Модель",
@@ -425,15 +574,36 @@ function render(response, requestPayload) {
   renderMidroll(items);
 }
 
-function loadRecommendations() {
+async function loadRecommendations() {
   const payload = buildRequestPayload();
 
+  state.requestInFlight = true;
   elements.refreshButton.disabled = true;
-  state.response = buildLocalResponse(payload);
-  state.source = "local";
-  setStatus("Local mode", "demo");
-  render(state.response, payload);
-  elements.refreshButton.disabled = false;
+  elements.demoButton.disabled = true;
+  setStatus("Loading...", "");
+
+  try {
+    const response = await fetchRecommendations(payload);
+    state.response = {
+      ...response,
+      retrieval_used: response.candidate_mode === "retrieval + ranking",
+      online_state_applied: false,
+      top_k: response.items.length,
+      artifacts_dir: response.artifacts_dir || "backend-generated",
+    };
+    state.source = "api";
+    setStatus("API mode", "ok");
+  } catch (error) {
+    state.response = buildLocalResponse(payload);
+    state.source = "local";
+    setStatus("Local fallback", "demo");
+    console.warn("Failed to fetch recommendations, using local fallback:", error);
+  } finally {
+    state.requestInFlight = false;
+    render(state.response, payload);
+    elements.refreshButton.disabled = false;
+    elements.demoButton.disabled = false;
+  }
 }
 
 function activateQuickUsers() {
@@ -456,7 +626,11 @@ function bindEvents() {
   });
 
   elements.demoButton.addEventListener("click", () => {
-    loadRecommendations();
+    const payload = buildRequestPayload();
+    state.response = buildLocalResponse(payload);
+    state.source = "demo";
+    setStatus("Demo mode", "demo");
+    render(state.response, payload);
   });
 
   activateQuickUsers();
