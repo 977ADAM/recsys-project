@@ -61,3 +61,26 @@ def get_banner(db: Session, banner_id: str) -> Banner | None:
     return db.execute(
         select(Banner).where(Banner.banner_id == banner_id)
     ).scalar_one_or_none()
+
+
+def delete_banner(db: Session, banner_id: str) -> Banner | None:
+    banner = db.scalar(select(Banner).where(Banner.banner_id == banner_id))
+
+    if banner:
+        db.delete(banner)
+        db.commit()
+
+    return banner
+
+
+def patch_banner(db: Session, banner_id: str, **fields) -> Banner | None:
+    banner = db.scalar(select(Banner).where(Banner.banner_id == banner_id))
+    if banner is None:
+        return None
+
+    for field_name, value in fields.items():
+        setattr(banner, field_name, value)
+
+    db.commit()
+    db.refresh(banner)
+    return banner

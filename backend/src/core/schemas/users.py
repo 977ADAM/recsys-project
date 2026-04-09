@@ -20,6 +20,22 @@ class UserCreate(BaseModel):
     is_premium: bool
 
 
+class UserPatch(BaseModel):
+    age: int | None = Field(default=None, ge=0, le=32767)
+    gender: Gender | None = None
+    city_tier: str | None = Field(default=None, min_length=1, max_length=10)
+    device_os: str | None = Field(default=None, min_length=1, max_length=20)
+    platform: str | None = Field(default=None, min_length=1, max_length=20)
+    income_band: str | None = Field(default=None, min_length=1, max_length=10)
+    activity_segment: str | None = Field(default=None, min_length=1, max_length=10)
+    interest_1: str | None = Field(default=None, min_length=1, max_length=50)
+    interest_2: str | None = Field(default=None, min_length=1, max_length=50)
+    interest_3: str | None = Field(default=None, min_length=1, max_length=50)
+    country: str | None = Field(default=None, min_length=2, max_length=2)
+    signup_days_ago: int | None = Field(default=None, ge=0)
+    is_premium: bool | None = None
+
+
 class UserResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

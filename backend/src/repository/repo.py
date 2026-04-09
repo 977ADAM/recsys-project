@@ -1,19 +1,9 @@
 from sqlalchemy.orm import Session
 
-from backend.src.repository.banners import (
-    create_banner as repo_create_banner,
-    get_banner as repo_get_banner,
-    get_banner_by_id as repo_get_banner_by_id,
-    get_banners as repo_get_banners,
-)
 from backend.src.repository.models.banners import Banner
 from backend.src.repository.models.users import User
-from backend.src.repository.users import (
-    create_user as repo_create_user,
-    get_user as repo_get_user,
-    get_by_user_id as repo_get_by_user_id,
-    get_users as repo_get_users,
-)
+from backend.src.repository import banners as banners_repo
+from backend.src.repository import users as users_repo
 
 
 class UserRepository:
@@ -21,7 +11,7 @@ class UserRepository:
         self.db = db
 
     def get_by_user_id(self, user_id: str) -> User | None:
-        return repo_get_by_user_id(self.db, user_id)
+        return users_repo.get_by_user_id(self.db, user_id)
 
     def create_user(
         self,
@@ -41,7 +31,7 @@ class UserRepository:
         signup_days_ago: int,
         is_premium: bool,
     ) -> User:
-        return repo_create_user(
+        return users_repo.create_user(
             db=self.db,
             user_id=user_id,
             age=age,
@@ -60,10 +50,16 @@ class UserRepository:
         )
 
     def get_users(self) -> list[User]:
-        return repo_get_users(self.db)
+        return users_repo.get_users(self.db)
 
     def get_user(self, user_id: str) -> User | None:
-        return repo_get_user(self.db, user_id)
+        return users_repo.get_user(self.db, user_id)
+
+    def delete_user(self, user_id: str) -> User | None:
+        return users_repo.delete_user(self.db, user_id)
+
+    def patch_user(self, user_id: str, **fields) -> User | None:
+        return users_repo.patch_user(self.db, user_id, **fields)
 
 
 class BannerRepository:
@@ -71,7 +67,7 @@ class BannerRepository:
         self.db = db
 
     def get_banner_by_id(self, banner_id: str) -> Banner | None:
-        return repo_get_banner_by_id(self.db, banner_id)
+        return banners_repo.get_banner_by_id(self.db, banner_id)
 
     def create_banner(
         self,
@@ -91,7 +87,7 @@ class BannerRepository:
         is_active: bool,
         landing_page: str,
     ) -> Banner:
-        return repo_create_banner(
+        return banners_repo.create_banner(
             db=self.db,
             banner_id=banner_id,
             brand=brand,
@@ -110,7 +106,13 @@ class BannerRepository:
         )
 
     def get_banners(self) -> list[Banner]:
-        return repo_get_banners(self.db)
+        return banners_repo.get_banners(self.db)
 
     def get_banner(self, banner_id: str) -> Banner | None:
-        return repo_get_banner(self.db, banner_id)
+        return banners_repo.get_banner(self.db, banner_id)
+
+    def delete_banner(self, banner_id: str) -> Banner | None:
+        return banners_repo.delete_banner(self.db, banner_id)
+
+    def patch_banner(self, banner_id: str, **fields) -> Banner | None:
+        return banners_repo.patch_banner(self.db, banner_id, **fields)

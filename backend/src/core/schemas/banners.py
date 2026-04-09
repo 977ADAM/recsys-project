@@ -29,6 +29,32 @@ class BannerCreate(BaseModel):
         return self
 
 
+class BannerPatch(BaseModel):
+    brand: str | None = Field(default=None, min_length=1, max_length=50)
+    category: str | None = Field(default=None, min_length=1, max_length=50)
+    subcategory: str | None = Field(default=None, min_length=1, max_length=100)
+    banner_format: BannerFormat | None = None
+    campaign_goal: CampaignGoal | None = None
+    target_gender: Gender | None = None
+    target_age_min: int | None = Field(default=None, ge=0, le=32767)
+    target_age_max: int | None = Field(default=None, ge=0, le=32767)
+    cpm_bid: Decimal | None = Field(default=None, ge=0)
+    quality_score: Decimal | None = Field(default=None, ge=0, le=1)
+    created_at: date | None = None
+    is_active: bool | None = None
+    landing_page: AnyHttpUrl | None = None
+
+    @model_validator(mode="after")
+    def validate_age_range(self) -> "BannerPatch":
+        if (
+            self.target_age_min is not None
+            and self.target_age_max is not None
+            and self.target_age_max < self.target_age_min
+        ):
+            raise ValueError("target_age_max must be greater than or equal to target_age_min")
+        return self
+
+
 class BannerResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

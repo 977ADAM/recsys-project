@@ -1,8 +1,13 @@
-from backend.src.core.schemas.banners import BannerCreate, BannerResponse, BannersResponse
-from backend.src.core.schemas.users import UserResponse, UserCreate, UsersResponse
+from backend.src.core.schemas.banners import (
+    BannerCreate,
+    BannerPatch,
+    BannerResponse,
+    BannersResponse,
+)
+from backend.src.core.schemas.users import UserCreate, UserPatch, UserResponse, UsersResponse
 from backend.src.repository.repo import BannerRepository, UserRepository
-from backend.src.services.banners import create_banner, get_banner, get_banners
-from backend.src.services.users import create_user, get_user, get_users
+from backend.src.services import banners as banners_service
+from backend.src.services import users as users_service
 
 
 class UsersService:
@@ -10,13 +15,19 @@ class UsersService:
         self.repo = repo
 
     def create_user(self, user: UserCreate) -> UserResponse:
-        return create_user(self.repo, user)
+        return users_service.create_user(self.repo, user)
 
     def get_users(self) -> UsersResponse:
-        return get_users(self.repo)
+        return users_service.get_users(self.repo)
 
     def get_user(self, user_id: str) -> UserResponse:
-        return get_user(self.repo, user_id)
+        return users_service.get_user(self.repo, user_id)
+
+    def delete_user(self, user_id: str) -> UserResponse:
+        return users_service.delete_user(self.repo, user_id)
+
+    def patch_user(self, user_id: str, user: UserPatch) -> UserResponse:
+        return users_service.patch_user(self.repo, user_id, user)
 
 
 class BannersService:
@@ -24,10 +35,16 @@ class BannersService:
         self.repo = repo
 
     def create_banner(self, banner: BannerCreate) -> BannerResponse:
-        return create_banner(self.repo, banner)
+        return banners_service.create_banner(self.repo, banner)
 
     def get_banners(self) -> BannersResponse:
-        return get_banners(self.repo)
+        return banners_service.get_banners(self.repo)
 
     def get_banner(self, banner_id: str) -> BannerResponse:
-        return get_banner(self.repo, banner_id)
+        return banners_service.get_banner(self.repo, banner_id)
+
+    def delete_banner(self, banner_id: str) -> BannerResponse:
+        return banners_service.delete_banner(self.repo, banner_id)
+
+    def patch_banner(self, banner_id: str, banner: BannerPatch) -> BannerResponse:
+        return banners_service.patch_banner(self.repo, banner_id, banner)

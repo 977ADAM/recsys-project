@@ -1,5 +1,5 @@
 from backend.src.core.errors.common import EntityAlreadyExistsError, EntityNotFoundError
-from backend.src.core.schemas.users import UserCreate, UsersResponse, UserResponse
+from backend.src.core.schemas.users import UserCreate, UserPatch, UserResponse, UsersResponse
 from backend.src.repository.repo import UserRepository
 
 
@@ -31,13 +31,28 @@ def create_user(
 
 
 def get_users(repo: UserRepository) -> UsersResponse:
-    return UsersResponse(
-        users=[UserResponse.model_validate(user) for user in repo.get_users()],
-    )
-
+    users = [UserResponse.model_validate(user) for user in repo.get_users()]
+    return UsersResponse(users=users)
 
 def get_user(repo: UserRepository, user_id: str) -> UserResponse:
     user = repo.get_user(user_id)
     if user is None:
         raise EntityNotFoundError(f"User with user_id={user_id} not found")
     return UserResponse.model_validate(user)
+
+def delete_user(repo: UserRepository, user_id: str) -> UserResponse:
+    user = repo.delete_user(user_id)
+    if user is None:
+        raise EntityNotFoundError(f"User with user_id={user_id} not found")
+    return UserResponse.model_validate(user)
+
+
+def patch_user(
+    repo: UserRepository,
+    user_id: str,
+    user: UserPatch,
+) -> UserResponse:
+    updated_user = repo.patch_user(user_id, **user.model_dump(exclude_unset=True))
+    if updated_user is None:
+        raise EntityNotFoundError(f"User with user_id={user_id} not found")
+    return UserResponse.model_validate(updated_user)

@@ -1,5 +1,5 @@
 from backend.src.core.errors.common import EntityAlreadyExistsError, EntityNotFoundError
-from backend.src.core.schemas.banners import BannerCreate, BannerResponse, BannersResponse
+from backend.src.core.schemas.banners import BannerCreate, BannerPatch, BannerResponse, BannersResponse
 from backend.src.repository.repo import BannerRepository
 
 
@@ -43,3 +43,25 @@ def get_banner(repo: BannerRepository, banner_id: str) -> BannerResponse:
     if banner is None:
         raise EntityNotFoundError(f"Banner with banner_id={banner_id} not found")
     return BannerResponse.model_validate(banner)
+
+
+def delete_banner(repo: BannerRepository, banner_id: str) -> BannerResponse:
+    banner = repo.delete_banner(banner_id)
+    if banner is None:
+        raise EntityNotFoundError(f"Banner with banner_id={banner_id} not found")
+    return BannerResponse.model_validate(banner)
+
+
+def patch_banner(
+    repo: BannerRepository,
+    banner_id: str,
+    banner: BannerPatch,
+) -> BannerResponse:
+    fields = banner.model_dump(exclude_unset=True)
+    if "landing_page" in fields:
+        fields["landing_page"] = str(fields["landing_page"])
+
+    updated_banner = repo.patch_banner(banner_id, **fields)
+    if updated_banner is None:
+        raise EntityNotFoundError(f"Banner with banner_id={banner_id} not found")
+    return BannerResponse.model_validate(updated_banner)

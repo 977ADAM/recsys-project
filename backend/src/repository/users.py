@@ -55,6 +55,28 @@ def get_users(db: Session) -> list[User]:
 
 
 def get_user(db: Session, user_id: str) -> User | None:
-    return db.execute(
-        select(User).where(User.user_id == user_id)
-    ).scalar_one_or_none()
+    user = db.execute(select(User).where(User.user_id == user_id)).scalar_one_or_none()
+    return user
+
+
+def delete_user(db: Session, user_id: str) -> User | None:
+    user = db.scalar(select(User).where(User.user_id == user_id))
+
+    if user:
+        db.delete(user)
+        db.commit()
+
+    return user
+
+
+def patch_user(db: Session, user_id: str, **fields) -> User | None:
+    user = db.scalar(select(User).where(User.user_id == user_id))
+    if user is None:
+        return None
+
+    for field_name, value in fields.items():
+        setattr(user, field_name, value)
+
+    db.commit()
+    db.refresh(user)
+    return user
