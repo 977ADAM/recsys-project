@@ -2,7 +2,11 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from backend.src.api.deps import get_db
-from backend.src.core.errors.common import EntityAlreadyExistsError, EntityNotFoundError
+from backend.src.core.errors.common import (
+    EntityAlreadyExistsError,
+    EntityNotFoundError,
+    InvalidRequestError,
+)
 from backend.src.core.schemas.banners import BannerCreate, BannerPatch, BannerResponse, BannersResponse
 from backend.src.repository.repo import BannerRepository
 from backend.src.services.service import BannersService
@@ -21,6 +25,11 @@ def _to_http_exception(exc: Exception) -> HTTPException:
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(exc),
         )
+    if isinstance(exc, InvalidRequestError):
+        return HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        )
     raise exc
 
 
@@ -37,7 +46,7 @@ def create_banner(
 
     try:
         return service.create_banner(banner)
-    except (EntityAlreadyExistsError, EntityNotFoundError) as exc:
+    except (EntityAlreadyExistsError, EntityNotFoundError, InvalidRequestError) as exc:
         raise _to_http_exception(exc) from exc
 
 
@@ -62,7 +71,7 @@ def get_banner(
 
     try:
         return service.get_banner(banner_id)
-    except (EntityAlreadyExistsError, EntityNotFoundError) as exc:
+    except (EntityAlreadyExistsError, EntityNotFoundError, InvalidRequestError) as exc:
         raise _to_http_exception(exc) from exc
 
 

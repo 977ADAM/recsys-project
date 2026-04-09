@@ -4,3 +4,7 @@ class EntityAlreadyExistsError(Exception):
 
 class EntityNotFoundError(Exception):
     pass
+
+
+class InvalidRequestError(Exception):
+    pass

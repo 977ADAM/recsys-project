@@ -1,4 +1,8 @@
-from backend.src.core.errors.common import EntityAlreadyExistsError, EntityNotFoundError
+from backend.src.core.errors.common import (
+    EntityAlreadyExistsError,
+    EntityNotFoundError,
+    InvalidRequestError,
+)
 from backend.src.core.schemas.banners import BannerCreate, BannerPatch, BannerResponse, BannersResponse
 from backend.src.repository.repo import BannerRepository
 
@@ -61,7 +65,16 @@ def patch_banner(
     if "landing_page" in fields:
         fields["landing_page"] = str(fields["landing_page"])
 
-    updated_banner = repo.patch_banner(banner_id, **fields)
-    if updated_banner is None:
+    current_banner = repo.get_banner(banner_id)
+    if current_banner is None:
         raise EntityNotFoundError(f"Banner with banner_id={banner_id} not found")
+
+    target_age_min = fields.get("target_age_min", current_banner.target_age_min)
+    target_age_max = fields.get("target_age_max", current_banner.target_age_max)
+    if target_age_max < target_age_min:
+        raise InvalidRequestError(
+            "target_age_max must be greater than or equal to target_age_min"
+        )
+
+    updated_banner = repo.patch_banner(banner_id, **fields)
     return BannerResponse.model_validate(updated_banner)
