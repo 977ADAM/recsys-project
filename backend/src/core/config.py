@@ -11,13 +11,6 @@ class Settings:
     app_name: str
     api_v1_prefix: str
     database_url: str
-    interactions_csv: str
-    users_csv: str
-    banners_csv: str
-    artifacts_dir: str
-    retrieval_artifacts_dir: str
-    event_log_path: str
-    redis_url: str
 
 
 def get_settings() -> Settings:
@@ -28,6 +21,6 @@ def get_settings() -> Settings:
         api_v1_prefix=os.getenv("API_V1_PREFIX", "/api/v1"),
         database_url=os.getenv(
             "DATABASE_URL",
-            "postgresql+psycopg://recsys:recsys@localhost:5433/recsys",
+            "postgresql+psycopg://recsys:recsys@localhost:5432/recsys",
         ),
     )

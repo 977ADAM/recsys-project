@@ -25,7 +25,8 @@ postgres-up:
 	docker compose up -d postgres
 
 api-up:
-	@python -m uvicorn backend.cmd.api.main:app --host 127.0.0.1 --port 8080
+	@docker compose up -d postgres && \
+	python -m uvicorn backend.cmd.api.main:app --host 127.0.0.1 --port 8080
 
 stack-up:
 	docker compose up -d api redis postgres

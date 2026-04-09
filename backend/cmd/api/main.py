@@ -29,7 +29,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    app.include_router(api_router, prefix=settings.api_v1_prefix)
+    app.include_router(api_router)
 
     @app.get("/health", tags=["health"])
     def healthcheck() -> dict[str, str]:

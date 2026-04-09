@@ -4,10 +4,13 @@ from collections.abc import Iterator
 from functools import lru_cache
 
 from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from backend.src.core.config import Settings
-from backend.src.core.models import event  # noqa: F401
+
+
+class Base(DeclarativeBase):
+    pass
 
 
 @lru_cache(maxsize=1)
@@ -37,3 +40,4 @@ def get_db_session(settings: Settings) -> Iterator[Session]:
 
 def init_db(settings: Settings) -> None:
     engine = get_engine(settings.database_url)
+    Base.metadata.create_all(bind=engine)
