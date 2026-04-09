@@ -1,6 +1,6 @@
+class EntityAlreadyExistsError(Exception):
+    pass
 
 
-
-
-class EmailAlreadyRegisteredError(Exception):
+class EntityNotFoundError(Exception):
     pass
