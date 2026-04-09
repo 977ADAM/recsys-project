@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from src.api.deps import get_db
+from backend.src.api.deps import get_db
 from backend.src.core.errors.common import EmailAlreadyRegisteredError
 from backend.src.core.schemas.users import UserCreate, UserRead
 from backend.src.repository.repo import UserRepository

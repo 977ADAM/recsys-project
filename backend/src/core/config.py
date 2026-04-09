@@ -30,11 +30,4 @@ def get_settings() -> Settings:
             "DATABASE_URL",
             "postgresql+psycopg://recsys:recsys@localhost:5433/recsys",
         ),
-        interactions_csv=os.getenv("INTERACTIONS_CSV", "data/db/banner_interactions.csv"),
-        users_csv=os.getenv("USERS_CSV", "data/db/users.csv"),
-        banners_csv=os.getenv("BANNERS_CSV", "data/db/banners.csv"),
-        artifacts_dir=os.getenv("ARTIFACTS_DIR", "deepfm_artifacts"),
-        retrieval_artifacts_dir=os.getenv("RETRIEVAL_ARTIFACTS_DIR", "artifacts/pytorch_retrieval"),
-        event_log_path=os.getenv("EVENT_LOG_PATH", "out/events/events.jsonl"),
-        redis_url=os.getenv("REDIS_URL", "redis://localhost:6380/0"),
     )
