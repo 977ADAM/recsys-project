@@ -1,16 +1,22 @@
-from backend.src.core.security import hash_password
 from backend.src.core.models.users import User
 from backend.src.core.schemas.users import UserCreate
 from backend.src.repository.repo import UserRepository
+from backend.src.core.errors.common import EmailAlreadyRegisteredError
+from collections.abc import Callable
 
+PasswordHasher = Callable[[str], str]
 
-def create_user(repo: UserRepository, user: UserCreate) -> User:
+def create_user(
+    repo: UserRepository,
+    user: UserCreate,
+    password_hasher: PasswordHasher,
+) -> User:
     existing_user = repo.get_by_email(user.email)
-    if existing_user:
-        raise ValueError("Email already registered")
+    if existing_user is not None:
+        raise EmailAlreadyRegisteredError("Email already registered")
 
     return repo.create_user(
         email=user.email,
         full_name=user.full_name,
-        hashed_password=hash_password(user.password),
+        hashed_password=password_hasher(user.password),
     )
