@@ -1,7 +1,8 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.src.repository.models.users import User, Users
+from backend.src.repository.models.users import User
+
 
 def get_by_email(db: Session, email: str) -> User | None:
     return db.execute(
@@ -25,7 +26,6 @@ def create_user(
     db.refresh(user)
     return user
 
-def get_users(db: Session) -> Users:
-    return Users(db.scalars(select(User)).all())
-    
-    
+
+def get_users(db: Session) -> list[User]:
+    return list(db.scalars(select(User).order_by(User.id)).all())
