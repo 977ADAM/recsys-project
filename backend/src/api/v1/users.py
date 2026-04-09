@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 
 from backend.src.api.deps import get_db
@@ -29,14 +30,14 @@ def _to_http_exception(exc: Exception) -> HTTPException:
     response_model=UserResponse,
     status_code=status.HTTP_201_CREATED,
 )
-def create_user(
+async def create_user(
     user: UserCreate,
     db: Session = Depends(get_db),
 ):
     service = UsersService(UserRepository(db))
 
     try:
-        return service.create_user(user)
+        return await run_in_threadpool(service.create_user, user)
     except (EntityAlreadyExistsError, EntityNotFoundError) as exc:
         raise _to_http_exception(exc) from exc
 
@@ -46,42 +47,42 @@ def create_user(
     response_model=UsersResponse,
     status_code=status.HTTP_200_OK,
 )
-def get_users(
+async def get_users(
     db: Session = Depends(get_db),
 ):
     service = UsersService(UserRepository(db))
-    return service.get_users()
+    return await run_in_threadpool(service.get_users)
 
 
 @router.get("/{user_id}", response_model=UserResponse)
-def get_user(
+async def get_user(
     user_id: str,
     db: Session = Depends(get_db),
 ):
     service = UsersService(UserRepository(db))
     try:
-        return service.get_user(user_id)
+        return await run_in_threadpool(service.get_user, user_id)
     except (EntityAlreadyExistsError, EntityNotFoundError) as exc:
         raise _to_http_exception(exc) from exc
 
 
 @router.patch("/{user_id}", response_model=UserResponse, status_code=status.HTTP_200_OK)
-def patch_user(
+async def patch_user(
     user_id: str,
     user: UserPatch,
     db: Session = Depends(get_db),
 ):
     service = UsersService(UserRepository(db))
     try:
-        return service.patch_user(user_id, user)
+        return await run_in_threadpool(service.patch_user, user_id, user)
     except (EntityAlreadyExistsError, EntityNotFoundError) as exc:
         raise _to_http_exception(exc) from exc
 
 
 @router.delete("/{user_id}", response_model=UserResponse, status_code=status.HTTP_200_OK)
-def delete_user(user_id: str, db: Session = Depends(get_db)):
+async def delete_user(user_id: str, db: Session = Depends(get_db)):
     service = UsersService(UserRepository(db))
     try:
-        return service.delete_user(user_id)
+        return await run_in_threadpool(service.delete_user, user_id)
     except (EntityAlreadyExistsError, EntityNotFoundError) as exc:
         raise _to_http_exception(exc) from exc

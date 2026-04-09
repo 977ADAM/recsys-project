@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 import sys
 from pathlib import Path
 
@@ -16,9 +17,16 @@ from backend.src.api.router import api_router  # noqa: E402
 from backend.src.core.db import init_db  # noqa: E402
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    settings = get_app_settings()
+    init_db(settings)
+    yield
+
+
 def create_app() -> FastAPI:
     settings = get_app_settings()
-    app = FastAPI(title=settings.app_name)
+    app = FastAPI(title=settings.app_name, lifespan=lifespan)
     frontend_dir = PROJECT_ROOT / "frontend"
 
     app.add_middleware(
@@ -32,12 +40,8 @@ def create_app() -> FastAPI:
     app.include_router(api_router)
 
     @app.get("/health", tags=["health"])
-    def healthcheck() -> dict[str, str]:
+    async def healthcheck() -> dict[str, str]:
         return {"status": "ok"}
-
-    @app.on_event("startup")
-    def on_startup() -> None:
-        init_db(settings)
 
     if frontend_dir.exists():
         app.mount("/", StaticFiles(directory=frontend_dir, html=True), name="frontend")

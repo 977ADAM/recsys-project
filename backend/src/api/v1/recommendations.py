@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, status
+from fastapi.concurrency import run_in_threadpool
 
 from backend.src.api.deps import get_app_settings
 from backend.src.core.errors.common import EntityNotFoundError, InvalidRequestError
@@ -29,11 +30,11 @@ def _to_http_exception(exc: Exception) -> HTTPException:
     response_model=RecommendationResponse,
     status_code=status.HTTP_200_OK,
 )
-def get_recommendations(
+async def get_recommendations(
     request: RecommendationRequest,
 ):
     settings = get_app_settings()
     try:
-        return recommend_banners(request, settings)
+        return await run_in_threadpool(recommend_banners, request, settings)
     except (EntityNotFoundError, InvalidRequestError) as exc:
         raise _to_http_exception(exc) from exc
