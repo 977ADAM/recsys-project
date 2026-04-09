@@ -3,6 +3,7 @@
   "num_users": 5000,
   "num_items": 300,
   "files": {
-    "checkpoint": "retrieval_model.pt"
+    "checkpoint": "retrieval_model.pt",
+    "item_embeddings": "item_embeddings.npy"
   }
 }

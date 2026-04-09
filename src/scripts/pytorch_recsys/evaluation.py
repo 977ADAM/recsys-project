@@ -26,6 +26,37 @@ class EvalResult:
     ndcg_at_k: float
 
 
+@dataclass(frozen=True)
+class EvalSplit:
+    warm_pairs: pd.DataFrame
+    cold_pairs: pd.DataFrame
+    warm_users: int
+    cold_users: int
+
+
+def split_eval_pairs(
+    eval_pairs: pd.DataFrame,
+    known_users: set[int],
+) -> EvalSplit:
+    if eval_pairs.empty:
+        return EvalSplit(
+            warm_pairs=eval_pairs.copy(),
+            cold_pairs=eval_pairs.copy(),
+            warm_users=0,
+            cold_users=0,
+        )
+
+    warm_mask = eval_pairs["user_idx"].isin(known_users)
+    warm_pairs = eval_pairs[warm_mask].copy()
+    cold_pairs = eval_pairs[~warm_mask].copy()
+    return EvalSplit(
+        warm_pairs=warm_pairs,
+        cold_pairs=cold_pairs,
+        warm_users=warm_pairs["user_idx"].nunique(),
+        cold_users=cold_pairs["user_idx"].nunique(),
+    )
+
+
 def evaluate_topk(
     model: TwoTower,
     eval_pairs: pd.DataFrame,
@@ -102,3 +133,10 @@ def print_eval(split_name: str, result: EvalResult, k: int) -> None:
     print(f"{split_name} Recall@{k}:    {result.recall_at_k:.6f}")
     print(f"{split_name} MAP@{k}:       {result.map_at_k:.6f}")
     print(f"{split_name} NDCG@{k}:      {result.ndcg_at_k:.6f}")
+
+
+def print_eval_cold_start(split_name: str, eval_split: EvalSplit) -> None:
+    print(
+        f"{split_name} warm users: {eval_split.warm_users}, "
+        f"cold users skipped: {eval_split.cold_users}"
+    )

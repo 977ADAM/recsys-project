@@ -17,9 +17,37 @@ from pytorch_recsys.data import (
     load_data,
     prepare_positive_pairs,
 )
-from pytorch_recsys.evaluation import evaluate_topk, print_eval
+from pytorch_recsys.evaluation import (
+    evaluate_topk,
+    print_eval,
+    print_eval_cold_start,
+    split_eval_pairs,
+)
 from pytorch_recsys.model import TwoTower
 from pytorch_recsys.training import build_train_loader, run_epoch, set_seed
+
+
+def evaluate_and_print(
+    split_name: str,
+    model: TwoTower,
+    eval_pairs,
+    train_history: dict[int, set[int]],
+    num_items: int,
+    device: torch.device,
+    ks: list[int],
+) -> None:
+    eval_split = split_eval_pairs(eval_pairs, set(train_history))
+    print_eval_cold_start(split_name, eval_split)
+    for k in ks:
+        result = evaluate_topk(
+            model=model,
+            eval_pairs=eval_split.warm_pairs,
+            seen_history=train_history,
+            num_items=num_items,
+            device=device,
+            k=k,
+        )
+        print_eval(split_name, result, k)
 
 
 def main() -> None:
@@ -30,7 +58,7 @@ def main() -> None:
     train_df, valid_df, test_df = load_data()
 
     # 2. Переводим строковые id в индексы для Embedding-слоёв.
-    user2idx, item2idx, idx2item = build_mappings()
+    user2idx, item2idx, idx2item = build_mappings(train_df)
 
     # 3. Оставляем только positive feedback и агрегируем дубликаты user-item.
     train_pairs = prepare_positive_pairs(train_df, user2idx, item2idx)
@@ -61,32 +89,33 @@ def main() -> None:
     print(f"train positive pairs: {len(train_pairs)}")
     print(f"valid positive pairs: {len(valid_pairs)}")
     print(f"test positive pairs: {len(test_pairs)}")
+    eval_ks = sorted({10, 20, 50, config.k})
 
     # 4. На каждой эпохе обучаем модель сравнивать positive item с sampled negative item.
     for epoch in range(1, config.epochs + 1):
         epoch_loss = run_epoch(model, train_loader, optimizer, device)
         print(f"epoch {epoch}/{config.epochs} loss: {epoch_loss:.6f}")
 
-        valid_result = evaluate_topk(
+        evaluate_and_print(
+            split_name="valid",
             model=model,
             eval_pairs=valid_pairs,
-            seen_history=train_history,
+            train_history=train_history,
             num_items=len(item2idx),
             device=device,
-            k=config.k,
+            ks=eval_ks,
         )
-        print_eval("valid", valid_result, config.k)
 
     # 5. После обучения проверяем качество на test и печатаем пару примеров рекомендаций.
-    test_result = evaluate_topk(
+    evaluate_and_print(
+        split_name="test",
         model=model,
         eval_pairs=test_pairs,
-        seen_history=train_history,
+        train_history=train_history,
         num_items=len(item2idx),
         device=device,
-        k=config.k,
+        ks=eval_ks,
     )
-    print_eval("test", test_result, config.k)
 
     artifact_dir = save_retrieval_artifacts(
         model=model,
