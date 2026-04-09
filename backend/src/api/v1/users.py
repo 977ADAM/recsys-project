@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from backend.src.api.deps import get_db
 from backend.src.core.errors.common import EmailAlreadyRegisteredError
-from backend.src.core.schemas.users import UserCreate, User
+from backend.src.core.schemas.users import UserCreate, User, Users
 from backend.src.repository.repo import UserRepository
 from backend.src.services.service import UsersService
 
@@ -28,6 +28,28 @@ def create_user(
 
     try:
         return service.create_user(user)
+    except EmailAlreadyRegisteredError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    
+
+@router.get(
+    "",
+    response_model=Users,
+    status_code=status.HTTP_200_OK,
+)
+def get_users(
+    users: Users,
+    db: Session = Depends(get_db),
+):
+    service = UsersService(
+        UserRepository(db),
+    )
+
+    try:
+        return service.get_users(users)
     except EmailAlreadyRegisteredError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

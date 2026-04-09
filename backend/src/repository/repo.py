@@ -1,9 +1,10 @@
 from sqlalchemy.orm import Session
 
-from backend.src.repository.models.users import User
+from backend.src.repository.models.users import User, Users
 from backend.src.repository.users import (
     create_user as repo_create_user,
     get_by_email as repo_get_by_email,
+    get_users as repo_get_users,
 )
 
 
@@ -27,3 +28,6 @@ class UserRepository:
             full_name=full_name,
             hashed_password=hashed_password,
         )
+    
+    def get_users(self) -> Users:
+        return repo_get_users(self.db)

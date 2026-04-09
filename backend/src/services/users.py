@@ -21,8 +21,5 @@ def create_user(
         hashed_password=password_hasher(user.password),
     )
 
-
-def get_users(
-    repo: UserRepository,
-) -> Users:
+def get_users(repo: UserRepository) -> Users:
     return repo.get_users()

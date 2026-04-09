@@ -8,13 +8,13 @@ from backend.src.repository.repo import UserRepository
 PasswordHasher = Callable[[str], str]
 
 class UsersService:
-    def __init__(self, repo: UserRepository, password_hasher: PasswordHasher):
+    def __init__(self, repo: UserRepository, password_hasher: PasswordHasher | None):
         self.repo = repo
-        self.password_hasher = password_hasher
+        self.password_hasher = password_hasher | None
 
     def create_user(self, user: UserCreate) -> User:
         return create_user(self.repo, user, self.password_hasher)
     
-    def get_users(self, users: Users) -> Users:
+    def get_users(self) -> Users:
         return get_users(self.repo)
     

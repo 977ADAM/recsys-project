@@ -1,7 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.src.repository.models.users import User
+from backend.src.repository.models.users import User, Users
 
 def get_by_email(db: Session, email: str) -> User | None:
     return db.execute(
@@ -25,3 +25,7 @@ def create_user(
     db.refresh(user)
     return user
 
+def get_users(db: Session) -> Users:
+    return Users(db.scalars(select(User)).all())
+    
+    
