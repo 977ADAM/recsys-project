@@ -13,7 +13,7 @@ except ModuleNotFoundError as exc:
         "Install it first, then rerun this script."
     ) from exc
 
-from pytorch_recsys.model import TwoTower
+from src.scripts.pytorch_recsys.model import TwoTower
 
 
 def load_retrieval_model(

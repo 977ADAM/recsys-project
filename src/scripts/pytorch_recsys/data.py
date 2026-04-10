@@ -31,11 +31,10 @@ def load_data() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     return train_df, valid_df, test_df
 
 
-def build_mappings() -> tuple[dict[str, int], dict[str, int], dict[int, str]]:
-    users = pd.read_csv("./data/db/users.csv")
+def build_mappings(train_df: pd.DataFrame) -> tuple[dict[str, int], dict[str, int], dict[int, str]]:
     banners = pd.read_csv("./data/db/banners.csv")
 
-    user_ids = users["user_id"].drop_duplicates().tolist()
+    user_ids = train_df["user_id"].drop_duplicates().tolist()
     banner_ids = banners["banner_id"].drop_duplicates().tolist()
 
     user2idx = {user_id: idx for idx, user_id in enumerate(user_ids)}
@@ -71,6 +70,37 @@ def prepare_positive_pairs(
     return grouped[["user_idx", "item_idx", "weight"]]
 
 
+def build_hard_negative_pools(
+    frame: pd.DataFrame,
+    user2idx: dict[str, int],
+    item2idx: dict[str, int],
+) -> dict[int, np.ndarray]:
+    negative = frame[frame["impressions"] > 0].copy()
+    negative["user_idx"] = negative["user_id"].map(user2idx)
+    negative["item_idx"] = negative["banner_id"].map(item2idx)
+    negative = negative.dropna(subset=["user_idx", "item_idx"]).copy()
+    negative["user_idx"] = negative["user_idx"].astype(np.int64)
+    negative["item_idx"] = negative["item_idx"].astype(np.int64)
+
+    grouped = (
+        negative.groupby(["user_idx", "item_idx"], as_index=False)
+        .agg(
+            impressions=("impressions", "sum"),
+            clicks=("clicks", "sum"),
+        )
+        .copy()
+    )
+
+    hard_negative = grouped[
+        (grouped["impressions"] > 0) & (grouped["clicks"] == 0)
+    ].copy()
+
+    pools: dict[int, np.ndarray] = {}
+    for user_idx, user_frame in hard_negative.groupby("user_idx"):
+        pools[int(user_idx)] = user_frame["item_idx"].to_numpy(dtype=np.int64)
+    return pools
+
+
 def build_user_history(pairs: pd.DataFrame) -> dict[int, set[int]]:
     history: dict[int, set[int]] = {}
     for row in pairs.itertuples(index=False):
@@ -86,23 +116,44 @@ class BPRDataset(Dataset):
         positive_pairs: pd.DataFrame,
         user_history: dict[int, set[int]],
         num_items: int,
+        hard_negative_pools: dict[int, np.ndarray],
     ) -> None:
         self.user_idx = positive_pairs["user_idx"].to_numpy(dtype=np.int64)
         self.item_idx = positive_pairs["item_idx"].to_numpy(dtype=np.int64)
         self.weight = positive_pairs["weight"].to_numpy(dtype=np.float32)
         self.user_history = user_history
         self.num_items = num_items
+        self.all_items = np.arange(num_items, dtype=np.int64)
+        self.available_negatives = self._build_negative_pools(hard_negative_pools)
 
     def __len__(self) -> int:
         return len(self.user_idx)
 
+    def _build_negative_pools(
+        self,
+        hard_negative_pools: dict[int, np.ndarray],
+    ) -> dict[int, np.ndarray]:
+        pools: dict[int, np.ndarray] = {}
+        for user_idx, seen_items in self.user_history.items():
+            candidate_items = hard_negative_pools.get(user_idx)
+            if candidate_items is None or len(candidate_items) == 0:
+                candidate_items = np.setdiff1d(
+                    self.all_items,
+                    np.fromiter(seen_items, dtype=np.int64),
+                    assume_unique=False,
+                )
+            if len(candidate_items) == 0:
+                raise ValueError(
+                    f"user_idx={user_idx} has interactions with every item; "
+                    "negative sampling is impossible"
+                )
+            pools[user_idx] = candidate_items
+        return pools
+
     def _sample_negative(self, user_idx: int) -> int:
-        # Негатив берём случайно, но не из уже кликнутых пользователем баннеров.
-        seen_items = self.user_history[user_idx]
-        negative = np.random.randint(0, self.num_items)
-        while negative in seen_items:
-            negative = np.random.randint(0, self.num_items)
-        return int(negative)
+        candidate_items = self.available_negatives[user_idx]
+        sampled_index = np.random.randint(0, len(candidate_items))
+        return int(candidate_items[sampled_index])
 
     def __getitem__(self, index: int) -> dict[str, torch.Tensor]:
         user_idx = int(self.user_idx[index])

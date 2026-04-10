@@ -1,0 +1,37 @@
+services:
+  redis:
+    image: redis:8.2.5-bookworm
+    container_name: recsys-redis
+    ports:
+      - "127.0.0.1:6380:6379"
+    volumes:
+      - rddata:/data
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  postgres:
+    image: postgres:18.1-bookworm
+    container_name: recsys-postgres
+    environment:
+      POSTGRES_DB: recsys
+      POSTGRES_USER: recsys
+      POSTGRES_PASSWORD: recsys
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U recsys -d recsys"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: always
+
+volumes:
+  rddata:
+  pgdata:
+  

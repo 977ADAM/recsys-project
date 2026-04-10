@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 try:
     import torch
 except ModuleNotFoundError as exc:
@@ -12,14 +14,43 @@ from pytorch_recsys.artifacts import save_retrieval_artifacts
 from pytorch_recsys.config import parse_args
 from pytorch_recsys.data import (
     BPRDataset,
+    build_hard_negative_pools,
     build_mappings,
     build_user_history,
     load_data,
     prepare_positive_pairs,
 )
-from pytorch_recsys.evaluation import evaluate_topk, print_eval
+from pytorch_recsys.evaluation import (
+    evaluate_topk,
+    print_eval,
+    print_eval_cold_start,
+    split_eval_pairs,
+)
 from pytorch_recsys.model import TwoTower
 from pytorch_recsys.training import build_train_loader, run_epoch, set_seed
+
+
+def evaluate_and_print(
+    split_name: str,
+    model: TwoTower,
+    eval_pairs,
+    train_history: dict[int, set[int]],
+    num_items: int,
+    device: torch.device,
+    k: int,
+):
+    eval_split = split_eval_pairs(eval_pairs, set(train_history))
+    print_eval_cold_start(split_name, eval_split)
+    result = evaluate_topk(
+        model=model,
+        eval_pairs=eval_split.warm_pairs,
+        seen_history=train_history,
+        num_items=num_items,
+        device=device,
+        k=k,
+    )
+    print_eval(split_name, result, k)
+    return result
 
 
 def main() -> None:
@@ -30,7 +61,7 @@ def main() -> None:
     train_df, valid_df, test_df = load_data()
 
     # 2. Переводим строковые id в индексы для Embedding-слоёв.
-    user2idx, item2idx, idx2item = build_mappings()
+    user2idx, item2idx, idx2item = build_mappings(train_df)
 
     # 3. Оставляем только positive feedback и агрегируем дубликаты user-item.
     train_pairs = prepare_positive_pairs(train_df, user2idx, item2idx)
@@ -38,10 +69,12 @@ def main() -> None:
     test_pairs = prepare_positive_pairs(test_df, user2idx, item2idx)
 
     train_history = build_user_history(train_pairs)
+    hard_negative_pools = build_hard_negative_pools(train_df, user2idx, item2idx)
     train_dataset = BPRDataset(
         positive_pairs=train_pairs,
         user_history=train_history,
         num_items=len(item2idx),
+        hard_negative_pools=hard_negative_pools,
     )
     train_loader = build_train_loader(train_dataset, batch_size=config.batch_size)
 
@@ -61,32 +94,70 @@ def main() -> None:
     print(f"train positive pairs: {len(train_pairs)}")
     print(f"valid positive pairs: {len(valid_pairs)}")
     print(f"test positive pairs: {len(test_pairs)}")
+    print(f"evaluating top-{config.k} candidates")
+
+    best_metric_name = f"valid_recall@{config.k}"
+    best_metric_value = -math.inf
+    best_epoch = 0
+    best_state_dict = None
+    epochs_without_improvement = 0
 
     # 4. На каждой эпохе обучаем модель сравнивать positive item с sampled negative item.
     for epoch in range(1, config.epochs + 1):
         epoch_loss = run_epoch(model, train_loader, optimizer, device)
         print(f"epoch {epoch}/{config.epochs} loss: {epoch_loss:.6f}")
 
-        valid_result = evaluate_topk(
+        valid_result = evaluate_and_print(
+            split_name="valid",
             model=model,
             eval_pairs=valid_pairs,
-            seen_history=train_history,
+            train_history=train_history,
             num_items=len(item2idx),
             device=device,
             k=config.k,
         )
-        print_eval("valid", valid_result, config.k)
+        current_metric = valid_result.recall_at_k
+        improvement = current_metric - best_metric_value
+
+        if improvement > config.early_stopping_min_delta:
+            best_metric_value = current_metric
+            best_epoch = epoch
+            best_state_dict = {
+                key: value.detach().cpu().clone()
+                for key, value in model.state_dict().items()
+            }
+            epochs_without_improvement = 0
+            print(
+                f"best epoch updated: {best_epoch} "
+                f"({best_metric_name}={best_metric_value:.6f})"
+            )
+        else:
+            epochs_without_improvement += 1
+            print(
+                f"no improvement for {epochs_without_improvement} epoch(s); "
+                f"best {best_metric_name}={best_metric_value:.6f} at epoch {best_epoch}"
+            )
+
+        if epochs_without_improvement >= config.early_stopping_patience:
+            print(
+                f"early stopping triggered after epoch {epoch}; "
+                f"restoring best epoch {best_epoch}"
+            )
+            break
+
+    if best_state_dict is not None:
+        model.load_state_dict(best_state_dict)
 
     # 5. После обучения проверяем качество на test и печатаем пару примеров рекомендаций.
-    test_result = evaluate_topk(
+    evaluate_and_print(
+        split_name="test",
         model=model,
         eval_pairs=test_pairs,
-        seen_history=train_history,
+        train_history=train_history,
         num_items=len(item2idx),
         device=device,
         k=config.k,
     )
-    print_eval("test", test_result, config.k)
 
     artifact_dir = save_retrieval_artifacts(
         model=model,
@@ -97,6 +168,9 @@ def main() -> None:
         output_dir=config.output_dir,
         save_item_embeddings=config.save_item_embeddings,
         device=device,
+        best_epoch=best_epoch,
+        best_metric_name=best_metric_name,
+        best_metric_value=best_metric_value,
     )
     print(f"saved retrieval artifacts to: {artifact_dir}")
 
