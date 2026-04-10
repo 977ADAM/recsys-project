@@ -3,9 +3,10 @@
   "num_users": 5000,
   "num_items": 300,
   "best_epoch": 2,
-  "best_metric_name": "valid_ndcg@100",
-  "best_metric_value": 0.08086279760525726,
+  "best_metric_name": "valid_recall@100",
+  "best_metric_value": 0.3553353658536585,
   "files": {
-    "checkpoint": "retrieval_model.pt"
+    "checkpoint": "retrieval_model.pt",
+    "item_embeddings": "item_embeddings.npy"
   }
 }

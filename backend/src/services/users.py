@@ -1,5 +1,5 @@
 from backend.src.core.errors.common import EntityAlreadyExistsError, EntityNotFoundError
-from backend.src.core.schemas.users import UserCreate, UserPatch, UserResponse, UsersResponse
+from backend.src.schemas.users import UserCreate, UserPatch, UserResponse, UsersResponse
 from backend.src.repository.repo import UserRepository
 
 

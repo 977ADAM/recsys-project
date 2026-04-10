@@ -6,7 +6,7 @@ from typing import Literal
 
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field
 
-from backend.src.core.schemas.schema import BannerFormat, CampaignGoal
+from backend.src.schemas.schema import BannerFormat, CampaignGoal
 
 
 ScoreMode = Literal["ctr", "value"]

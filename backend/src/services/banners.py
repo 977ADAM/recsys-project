@@ -3,7 +3,7 @@ from backend.src.core.errors.common import (
     EntityNotFoundError,
     InvalidRequestError,
 )
-from backend.src.core.schemas.banners import BannerCreate, BannerPatch, BannerResponse, BannersResponse
+from backend.src.schemas.banners import BannerCreate, BannerPatch, BannerResponse, BannersResponse
 from backend.src.repository.repo import BannerRepository
 
 

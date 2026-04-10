@@ -96,7 +96,7 @@ def main() -> None:
     print(f"test positive pairs: {len(test_pairs)}")
     print(f"evaluating top-{config.k} candidates")
 
-    best_metric_name = f"valid_ndcg@{config.k}"
+    best_metric_name = f"valid_recall@{config.k}"
     best_metric_value = -math.inf
     best_epoch = 0
     best_state_dict = None
@@ -116,7 +116,7 @@ def main() -> None:
             device=device,
             k=config.k,
         )
-        current_metric = valid_result.ndcg_at_k
+        current_metric = valid_result.recall_at_k
         improvement = current_metric - best_metric_value
 
         if improvement > config.early_stopping_min_delta:

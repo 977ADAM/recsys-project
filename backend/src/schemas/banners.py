@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, model_validator
 
-from backend.src.core.schemas.schema import BannerFormat, CampaignGoal, Gender
+from backend.src.schemas.schema import BannerFormat, CampaignGoal, Gender
 
 
 class BannerCreate(BaseModel):

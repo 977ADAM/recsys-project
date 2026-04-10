@@ -1,6 +1,6 @@
 from pydantic import BaseModel, ConfigDict, Field
 
-from backend.src.core.schemas.schema import Gender
+from backend.src.schemas.schema import Gender
 
 
 class UserCreate(BaseModel):

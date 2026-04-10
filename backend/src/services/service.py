@@ -1,10 +1,10 @@
-from backend.src.core.schemas.banners import (
+from backend.src.schemas.banners import (
     BannerCreate,
     BannerPatch,
     BannerResponse,
     BannersResponse,
 )
-from backend.src.core.schemas.users import UserCreate, UserPatch, UserResponse, UsersResponse
+from backend.src.schemas.users import UserCreate, UserPatch, UserResponse, UsersResponse
 from backend.src.repository.repo import BannerRepository, UserRepository
 from backend.src.services import banners as banners_service
 from backend.src.services import users as users_service

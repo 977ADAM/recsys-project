@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from backend.src.api.deps import get_db
 from backend.src.core.errors.common import EntityAlreadyExistsError, EntityNotFoundError
-from backend.src.core.schemas.users import UserCreate, UserPatch, UserResponse, UsersResponse
+from backend.src.schemas.users import UserCreate, UserPatch, UserResponse, UsersResponse
 from backend.src.repository.repo import UserRepository
 from backend.src.services.service import UsersService
 

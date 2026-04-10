@@ -14,7 +14,7 @@ from torch.utils.data import DataLoader
 
 from backend.src.core.config import Settings
 from backend.src.core.errors.common import EntityNotFoundError, InvalidRequestError
-from backend.src.core.schemas.recommendations import (
+from backend.src.schemas.recommendations import (
     RecommendationItem,
     RecommendationRequest,
     RecommendationResponse,

@@ -5,7 +5,7 @@ from fastapi.concurrency import run_in_threadpool
 
 from backend.src.api.deps import get_app_settings
 from backend.src.core.errors.common import EntityNotFoundError, InvalidRequestError
-from backend.src.core.schemas.recommendations import RecommendationRequest, RecommendationResponse
+from backend.src.schemas.recommendations import RecommendationRequest, RecommendationResponse
 from backend.src.services.recommendations import recommend_banners
 
 router = APIRouter(prefix="/recommendations", tags=["recommendations"])
