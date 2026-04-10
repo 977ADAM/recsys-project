@@ -25,6 +25,9 @@ def save_retrieval_artifacts(
     output_dir: str,
     save_item_embeddings: bool,
     device: torch.device,
+    best_epoch: int,
+    best_metric_name: str,
+    best_metric_value: float,
 ) -> Path:
     artifact_dir = Path(output_dir)
     artifact_dir.mkdir(parents=True, exist_ok=True)
@@ -36,6 +39,9 @@ def save_retrieval_artifacts(
         "item2idx": item2idx,
         "idx2item": idx2item,
         "embedding_dim": embedding_dim,
+        "best_epoch": best_epoch,
+        "best_metric_name": best_metric_name,
+        "best_metric_value": best_metric_value,
     }
     torch.save(checkpoint, artifact_dir / "retrieval_model.pt")
 
@@ -43,6 +49,9 @@ def save_retrieval_artifacts(
         "embedding_dim": embedding_dim,
         "num_users": len(user2idx),
         "num_items": len(item2idx),
+        "best_epoch": best_epoch,
+        "best_metric_name": best_metric_name,
+        "best_metric_value": best_metric_value,
         "files": {
             "checkpoint": "retrieval_model.pt",
         },
