@@ -17,7 +17,7 @@ def _to_http_exception(exc: Exception) -> HTTPException:
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(exc),
         )
-    if isinstance(exc, InvalidRequestError):
+    if isinstance(exc, InvalidRequestError):##
         return HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(exc),

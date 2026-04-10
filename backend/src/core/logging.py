@@ -21,7 +21,7 @@ def setup_logging(level: str | None = None) -> None:
                 "console": {
                     "class": "logging.StreamHandler",
                     "formatter": "default",
-                }
+                } 
             },
             "root": {
                 "level": log_level,
