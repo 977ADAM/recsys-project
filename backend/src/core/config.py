@@ -11,6 +11,7 @@ class Settings:
     app_name: str
     api_v1_prefix: str
     database_url: str
+    redis_url: str
 
 
 def get_settings() -> Settings:
@@ -22,5 +23,9 @@ def get_settings() -> Settings:
         database_url=os.getenv(
             "DATABASE_URL",
             "postgresql+psycopg://recsys:recsys@localhost:5432/recsys",
+        ),
+        redis_url=os.getenv(
+            "REDIS_URL",
+            "redis://127.0.0.1:6380/0",
         ),
     )

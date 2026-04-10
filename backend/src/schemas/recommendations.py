@@ -53,6 +53,7 @@ class RecommendationItem(BaseModel):
     is_active: bool
     landing_page: AnyHttpUrl | None = None
     retrieval_rank: int | None = None
+    retrieval_score: float | None = None
 
 
 class RecommendationResponse(BaseModel):

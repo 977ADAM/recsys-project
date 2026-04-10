@@ -2,6 +2,8 @@
 export
 
 export PROJECT_ROOT := $(shell pwd)
+API_BASE ?= http://127.0.0.1:8080
+JSON_FMT = if command -v jq >/dev/null 2>&1; then jq; else cat; fi
 
 
 up:
@@ -19,14 +21,55 @@ deepfmrun:
 
 
 infra-up:
-	docker compose up -d redis postgres
+	@docker compose up -d redis postgres
 
 postgres-up:
 	docker compose up -d postgres
 
 api-up:
-	@docker compose up -d postgres && \
-	python -m uvicorn backend.cmd.api.main:app --host 127.0.0.1 --port 8080
+	@python -m uvicorn backend.cmd.api.main:app --host 127.0.0.1 --port 8080
+
+api-health:
+	curl -sS $(API_BASE)/health | /bin/sh -c '$(JSON_FMT)'
+
+smoke-retrieval:
+	curl -sS -X POST $(API_BASE)/api/v1/retrieval \
+		-H "Content-Type: application/json" \
+		-d '{"user_id":"u_00007","top_k":5}' | /bin/sh -c '$(JSON_FMT)'
+
+smoke-retrieval-refresh:
+	curl -sS -X POST $(API_BASE)/api/v1/retrieval/refresh | /bin/sh -c '$(JSON_FMT)'
+
+smoke-retrieval-reload:
+	curl -sS -X POST $(API_BASE)/api/v1/retrieval/reload | /bin/sh -c '$(JSON_FMT)'
+
+smoke-retrieval-all:
+	$(MAKE) api-health
+	$(MAKE) smoke-retrieval
+	$(MAKE) smoke-retrieval-refresh
+	$(MAKE) smoke-retrieval-reload
+
+smoke-recommendations:
+	curl -sS -X POST $(API_BASE)/api/v1/recommendations \
+		-H "Content-Type: application/json" \
+		-d '{"user_id":"u_00007","top_k":5,"score_mode":"value","retrieval_artifacts_dir":"artifacts/pytorch_retrieval","retrieval_top_n":100}' | /bin/sh -c '$(JSON_FMT)'
+
+smoke-serving-all:
+	$(MAKE) api-health
+	$(MAKE) smoke-retrieval
+	$(MAKE) smoke-retrieval-refresh
+	$(MAKE) smoke-retrieval-reload
+	$(MAKE) smoke-recommendations
+
+test-backend:
+	.venv/bin/python -m unittest discover -s tests -p 'test_*.py' -v
+
+test-retrieval:
+	.venv/bin/python -m unittest \
+		tests.backend.test_retrieval_service \
+		tests.backend.test_retrieval_api \
+		tests.backend.test_recommendations_with_retrieval \
+		-v
 
 stack-up:
 	docker compose up -d api redis postgres

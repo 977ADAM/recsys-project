@@ -163,6 +163,82 @@ python main.py recommend \
 2. CatBoost строит признаки только для этих кандидатов
 3. CatBoost возвращает финальный `top-k`
 
+## API Serving
+
+Для backend API:
+
+```bash
+make api-up
+```
+
+По умолчанию API поднимается на `127.0.0.1:8080`.
+
+Быстрые smoke-проверки:
+
+```bash
+make api-health
+make smoke-retrieval
+make smoke-retrieval-refresh
+make smoke-retrieval-reload
+make smoke-recommendations
+make smoke-serving-all
+```
+
+Автоматические проверки:
+- GitHub Actions workflow [backend-ci.yml](/home/adam/projects/recsys-project/.github/workflows/backend-ci.yml) запускает `make test-retrieval` и `make test-backend` на `push` и `pull_request`
+
+## Retrieval API Workflow
+
+Рабочий сценарий для retrieval serving:
+
+1. Обучить retrieval-модель и сохранить артефакты в `artifacts/pytorch_retrieval`
+2. Поднять API через `make api-up`
+3. Обновить in-memory state retrieval:
+
+```bash
+curl -X POST http://127.0.0.1:8080/api/v1/retrieval/refresh
+```
+
+4. Проверить retrieval и ranking smoke-командами:
+
+```bash
+make smoke-serving-all
+```
+
+Что делает refresh:
+- обновляет `active_banner_ids`
+- обновляет `popular_banner_scores`
+- обновляет `seen_banner_history`
+
+Что не делает refresh:
+- не перезагружает `retrieval_model.pt`
+- не меняет уже загруженный runtime модели без рестарта API
+
+Чтобы перезагрузить сам retrieval runtime без рестарта API:
+
+```bash
+curl -X POST http://127.0.0.1:8080/api/v1/retrieval/reload
+```
+
+Что делает reload:
+- сбрасывает cached runtime retrieval-модели
+- заново загружает `retrieval_model.pt` и `item_embeddings.npy`
+- после этого обновляет in-memory retrieval state
+
+Полезные ручки:
+
+```bash
+curl -X POST http://127.0.0.1:8080/api/v1/retrieval \
+  -H "Content-Type: application/json" \
+  -d '{"user_id":"u_00007","top_k":5}'
+```
+
+```bash
+curl -X POST http://127.0.0.1:8080/api/v1/recommendations \
+  -H "Content-Type: application/json" \
+  -d '{"user_id":"u_00007","top_k":5,"score_mode":"value","retrieval_artifacts_dir":"artifacts/pytorch_retrieval","retrieval_top_n":100}'
+```
+
 ## Данные
 
 Основные входные файлы:

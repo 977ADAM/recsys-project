@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import sys
 from functools import lru_cache
 from pathlib import Path
 
@@ -19,6 +18,7 @@ from backend.src.schemas.recommendations import (
     RecommendationRequest,
     RecommendationResponse,
 )
+from backend.src.services.retrieval import RetrievalService
 from src.pipeline.inference import (
     add_base_features,
     attach_recent_user_banner_history,
@@ -28,11 +28,6 @@ from src.pipeline.inference import (
 from src.pipeline.deepfm import train_deepfm as deepfm_pipeline
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-SCRIPTS_DIR = PROJECT_ROOT / "src" / "scripts"
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
-
-from src.scripts.pytorch_recsys.inference import recommend_top_n  # noqa: E402
 
 DEFAULT_INTERACTIONS = "data/db/banner_interactions.csv"
 DEFAULT_USERS = "data/db/users.csv"
@@ -129,28 +124,33 @@ def _predict_with_deepfm(candidates: pd.DataFrame, artifacts_dir: str) -> np.nda
 def _build_candidate_pool(
     *,
     request: RecommendationRequest,
+    retrieval_service: RetrievalService,
     user_df: pd.DataFrame,
     banners: pd.DataFrame,
     as_of_date: pd.Timestamp,
-    interactions_csv: Path | None,
 ) -> tuple[pd.DataFrame, str]:
     if request.retrieval_artifacts_dir:
-        retrieved_banner_ids = recommend_top_n(
-            artifact_dir=str(_resolve_path(PROJECT_ROOT, request.retrieval_artifacts_dir, request.retrieval_artifacts_dir)),
-            user_id=request.user_id,
-            top_n=request.retrieval_top_n,
-            exclude_seen=request.exclude_seen,
-            interactions_csv=str(interactions_csv) if interactions_csv is not None else None,
+        retrieval_result = retrieval_service.get_candidates(
+            request=retrieval_service_request(
+                user_id=request.user_id,
+                top_k=request.retrieval_top_n,
+                exclude_seen=request.exclude_seen,
+                only_active=request.only_active,
+                interactions_csv=request.interactions_csv,
+                banners_csv=request.banners_csv,
+                artifacts_dir=request.retrieval_artifacts_dir,
+            )
         )
+        retrieved_banner_ids = [item.banner_id for item in retrieval_result.items]
+        retrieval_rank = {item.banner_id: item.retrieval_rank for item in retrieval_result.items}
+        retrieval_score = {item.banner_id: item.retrieval_score for item in retrieval_result.items}
 
         candidates = banners[banners["banner_id"].isin(retrieved_banner_ids)].copy()
         if candidates.empty:
             raise InvalidRequestError("Retrieval returned no candidate banners for reranking.")
 
-        retrieval_rank = {
-            banner_id: rank for rank, banner_id in enumerate(retrieved_banner_ids, start=1)
-        }
         candidates["retrieval_rank"] = candidates["banner_id"].map(retrieval_rank)
+        candidates["retrieval_score"] = candidates["banner_id"].map(retrieval_score)
         user_row = user_df.iloc[0]
         for column in user_df.columns:
             candidates[column] = user_row[column]
@@ -166,9 +166,33 @@ def _build_candidate_pool(
     return candidates, "all banners"
 
 
+def retrieval_service_request(
+    *,
+    user_id: str,
+    top_k: int,
+    exclude_seen: bool,
+    only_active: bool,
+    interactions_csv: str | None,
+    banners_csv: str | None,
+    artifacts_dir: str | None,
+):
+    from backend.src.schemas.retrieval import RetrievalRequest
+
+    return RetrievalRequest(
+        user_id=user_id,
+        top_k=top_k,
+        exclude_seen=exclude_seen,
+        only_active=only_active,
+        interactions_csv=interactions_csv,
+        banners_csv=banners_csv,
+        artifacts_dir=artifacts_dir,
+    )
+
+
 def recommend_banners(
     request: RecommendationRequest,
     settings: Settings,
+    retrieval_service: RetrievalService,
 ) -> RecommendationResponse:
     artifacts_dir = _resolve_artifacts_path(settings.project_root, request.artifacts_dir)
     users_csv = _resolve_path(settings.project_root, request.users_csv, DEFAULT_USERS)
@@ -201,10 +225,10 @@ def recommend_banners(
 
     candidates, candidate_mode = _build_candidate_pool(
         request=request,
+        retrieval_service=retrieval_service,
         user_df=user_df,
         banners=banners,
         as_of_date=as_of_date,
-        interactions_csv=interactions_csv,
     )
 
     candidates = add_base_features(candidates)
@@ -288,6 +312,8 @@ def recommend_banners(
         result_columns.append("landing_page")
     if "retrieval_rank" in candidates.columns:
         result_columns.append("retrieval_rank")
+    if "retrieval_score" in candidates.columns:
+        result_columns.append("retrieval_score")
 
     result = (
         candidates.sort_values(sort_columns, ascending=ascending)
@@ -299,6 +325,10 @@ def recommend_banners(
         RecommendationItem.model_validate(item)
         for item in result.to_dict(orient="records")
     ]
+    retrieval_service.record_served_banners(
+        request.user_id,
+        [item.banner_id for item in items],
+    )
     return RecommendationResponse(
         user_id=request.user_id,
         as_of_date=as_of_date.date(),
