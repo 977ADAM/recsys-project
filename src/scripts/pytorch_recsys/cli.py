@@ -12,6 +12,7 @@ from pytorch_recsys.artifacts import save_retrieval_artifacts
 from pytorch_recsys.config import parse_args
 from pytorch_recsys.data import (
     BPRDataset,
+    build_hard_negative_pools,
     build_mappings,
     build_user_history,
     load_data,
@@ -66,10 +67,12 @@ def main() -> None:
     test_pairs = prepare_positive_pairs(test_df, user2idx, item2idx)
 
     train_history = build_user_history(train_pairs)
+    hard_negative_pools = build_hard_negative_pools(train_df, user2idx, item2idx)
     train_dataset = BPRDataset(
         positive_pairs=train_pairs,
         user_history=train_history,
         num_items=len(item2idx),
+        hard_negative_pools=hard_negative_pools,
     )
     train_loader = build_train_loader(train_dataset, batch_size=config.batch_size)
 
