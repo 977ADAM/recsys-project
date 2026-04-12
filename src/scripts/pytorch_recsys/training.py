@@ -47,12 +47,8 @@ def train_step(
     neg_item_idx = batch["neg_item_idx"].to(device)
     weight = batch["weight"].to(device)
 
-    user_vec = model.encode_user(user_idx)
-    pos_item_vec = model.encode_item(pos_item_idx)
-    neg_item_vec = model.encode_item(neg_item_idx)
-
-    pos_scores = model.score(user_vec, pos_item_vec)
-    neg_scores = model.score(user_vec, neg_item_vec)
+    pos_scores = model(user_idx, pos_item_idx)
+    neg_scores = model(user_idx, neg_item_idx)
 
     loss = bpr_loss(pos_scores, neg_scores, weight)
     loss.backward()

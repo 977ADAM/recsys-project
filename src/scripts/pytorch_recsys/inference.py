@@ -32,14 +32,23 @@ def load_retrieval_model(
     item2idx = checkpoint["item2idx"]
     idx2item = checkpoint["idx2item"]
     embedding_dim = int(checkpoint["embedding_dim"])
+    user_feature_dim = int(checkpoint.get("user_feature_dim", 0))
+    item_feature_dim = int(checkpoint.get("item_feature_dim", 0))
+    state_dict = checkpoint["model_state_dict"]
+    user_feature_table = state_dict.get("user_feature_table")
+    item_feature_table = state_dict.get("item_feature_table")
 
     # Размеры эмбеддингов берём из сохранённых словарей, чтобы восстановить модель один в один.
     model = TwoTower(
         n_users=len(user2idx),
         n_items=len(item2idx),
         emb_dim=embedding_dim,
+        user_feature_dim=user_feature_dim,
+        item_feature_dim=item_feature_dim,
+        user_feature_table=user_feature_table,
+        item_feature_table=item_feature_table,
     ).to(resolved_device)
-    model.load_state_dict(checkpoint["model_state_dict"])
+    model.load_state_dict(state_dict)
     model.eval()
 
     return model, user2idx, item2idx, idx2item, embedding_dim, resolved_device

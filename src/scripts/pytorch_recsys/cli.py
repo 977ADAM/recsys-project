@@ -26,6 +26,7 @@ from pytorch_recsys.evaluation import (
     print_eval_cold_start,
     split_eval_pairs,
 )
+from pytorch_recsys.features import build_banner_feature_matrix, build_user_feature_matrix
 from pytorch_recsys.model import TwoTower
 from pytorch_recsys.training import build_train_loader, run_epoch, set_seed
 
@@ -62,6 +63,10 @@ def main() -> None:
 
     # 2. Переводим строковые id в индексы для Embedding-слоёв.
     user2idx, item2idx, idx2item = build_mappings(train_df)
+    ordered_user_ids = [user_id for user_id, _ in sorted(user2idx.items(), key=lambda pair: pair[1])]
+    ordered_item_ids = [item_id for item_id, _ in sorted(item2idx.items(), key=lambda pair: pair[1])]
+    user_feature_table = torch.from_numpy(build_user_feature_matrix(ordered_user_ids))
+    item_feature_table = torch.from_numpy(build_banner_feature_matrix(ordered_item_ids))
 
     # 3. Оставляем только positive feedback и агрегируем дубликаты user-item.
     train_pairs = prepare_positive_pairs(train_df, user2idx, item2idx)
@@ -83,6 +88,10 @@ def main() -> None:
         n_users=len(user2idx),
         n_items=len(item2idx),
         emb_dim=config.embedding_dim,
+        user_feature_dim=user_feature_table.shape[1],
+        item_feature_dim=item_feature_table.shape[1],
+        user_feature_table=user_feature_table,
+        item_feature_table=item_feature_table,
     ).to(device)
     optimizer = torch.optim.Adam(
         model.parameters(),

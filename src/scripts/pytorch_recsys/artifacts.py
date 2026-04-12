@@ -39,6 +39,8 @@ def save_retrieval_artifacts(
         "item2idx": item2idx,
         "idx2item": idx2item,
         "embedding_dim": embedding_dim,
+        "user_feature_dim": model.user_feature_dim,
+        "item_feature_dim": model.item_feature_dim,
         "best_epoch": best_epoch,
         "best_metric_name": best_metric_name,
         "best_metric_value": best_metric_value,
@@ -47,6 +49,8 @@ def save_retrieval_artifacts(
 
     metadata = {
         "embedding_dim": embedding_dim,
+        "user_feature_dim": model.user_feature_dim,
+        "item_feature_dim": model.item_feature_dim,
         "num_users": len(user2idx),
         "num_items": len(item2idx),
         "best_epoch": best_epoch,
