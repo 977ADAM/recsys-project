@@ -1,52 +1,30 @@
 from __future__ import annotations
 
 from functools import lru_cache
-import json
 from pathlib import Path
 
 import torch
-import torch.nn as nn
 
 from src.retrieval.data.ingest import load_interactions_frame, resolve_dataset_path
-from src.retrieval.data.preprocess import build_mappings
-from src.retrieval.twotower_minimal import TwoTower
-
-DEFAULT_EMBEDDING_DIM = 64
-DEFAULT_EPOCHS = 25
-DEFAULT_LR = 1e-2
-
-
-def _load_saved_runtime(
-    artifact_dir: str,
-) -> tuple[TwoTower, dict[str, int], dict[str, int], dict[int, str]]:
-    artifact_path = Path(artifact_dir)
-    model_path = artifact_path / "model.pt"
-    mappings_path = artifact_path / "mappings.json"
-    if not model_path.exists() or not mappings_path.exists():
-        raise FileNotFoundError("Saved retrieval artifacts were not found.")
-
-    checkpoint = torch.load(model_path, map_location="cpu")
-    with mappings_path.open("r", encoding="utf-8") as file_obj:
-        mappings = json.load(file_obj)
-
-    user2idx = {str(user_id): int(idx) for user_id, idx in mappings["user2idx"].items()}
-    item2idx = {str(item_id): int(idx) for item_id, idx in mappings["item2idx"].items()}
-    idx2item = {int(idx): str(item_id) for idx, item_id in mappings["idx2item"].items()}
-
-    model = TwoTower(
-        n_users=int(checkpoint["n_users"]),
-        n_banners=int(checkpoint["n_banners"]),
-        emb_dim=int(checkpoint["embedding_dim"]),
-    )
-    model.load_state_dict(checkpoint["model_state_dict"])
-    model.eval()
-    return model, user2idx, item2idx, idx2item
+from src.retrieval.data.preprocess import (
+    build_mappings,
+    encode_frame,
+    filter_known_entities,
+)
+from src.retrieval.models.export import load_saved_runtime
+from src.retrieval.models.train import (
+    DEFAULT_EMBEDDING_DIM,
+    DEFAULT_LR,
+    DEFAULT_RUNTIME_EPOCHS,
+    train_model,
+)
+from src.retrieval.models.two_tower import TwoTower
 
 
 @lru_cache(maxsize=8)
 def _train_runtime(artifact_dir: str) -> tuple[TwoTower, dict[str, int], dict[str, int], dict[int, str]]:
     try:
-        return _load_saved_runtime(artifact_dir)
+        return load_saved_runtime(artifact_dir)
     except FileNotFoundError:
         pass
 
@@ -55,24 +33,10 @@ def _train_runtime(artifact_dir: str) -> tuple[TwoTower, dict[str, int], dict[st
     interactions = load_interactions_frame(interactions_csv, require_event_date=False)
     user2idx, item2idx, idx2item = build_mappings(interactions, str(banners_csv))
 
-    filtered = interactions[
-        interactions["user_id"].isin(user2idx) & interactions["banner_id"].isin(item2idx)
-    ].copy()
-    if filtered.empty:
+    filtered = filter_known_entities(interactions, user2idx, item2idx)
+    user_ids, banner_ids, labels = encode_frame(filtered, user2idx, item2idx)
+    if user_ids.numel() == 0:
         raise ValueError("Retrieval training dataset is empty after applying user/banner mappings.")
-
-    user_ids = torch.tensor(
-        filtered["user_id"].map(user2idx).to_numpy(),
-        dtype=torch.long,
-    )
-    banner_ids = torch.tensor(
-        filtered["banner_id"].map(item2idx).to_numpy(),
-        dtype=torch.long,
-    )
-    labels = torch.tensor(
-        (filtered["clicks"] > 0).astype("float32").to_numpy(),
-        dtype=torch.float32,
-    )
 
     torch.manual_seed(42)
     model = TwoTower(
@@ -80,17 +44,14 @@ def _train_runtime(artifact_dir: str) -> tuple[TwoTower, dict[str, int], dict[st
         n_banners=len(item2idx),
         emb_dim=DEFAULT_EMBEDDING_DIM,
     )
-    optimizer = torch.optim.Adam(model.parameters(), lr=DEFAULT_LR)
-    loss_fn = nn.BCEWithLogitsLoss()
-
-    model.train()
-    for _ in range(DEFAULT_EPOCHS):
-        logits = model(user_ids, banner_ids)
-        loss = loss_fn(logits, labels)
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-
+    train_model(
+        model,
+        user_ids,
+        banner_ids,
+        labels,
+        epochs=DEFAULT_RUNTIME_EPOCHS,
+        lr=DEFAULT_LR,
+    )
     model.eval()
     return model, user2idx, item2idx, idx2item
 
@@ -170,3 +131,11 @@ def recommend_top_n(
         k = min(top_n, scores.numel())
         top_indices = torch.topk(scores, k=k).indices.cpu().tolist()
     return [idx2item[item_idx] for item_idx in top_indices if item_idx in idx2item]
+
+
+__all__ = [
+    "load_retrieval_model",
+    "reset_runtime_caches",
+    "load_item_embeddings",
+    "recommend_top_n",
+]

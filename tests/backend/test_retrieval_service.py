@@ -12,7 +12,7 @@ import torch
 from backend.src.core.config import Settings, get_settings
 from backend.src.schemas.retrieval import RetrievalRequest
 from backend.src.services.retrieval import RetrievalService, retrieve_banners
-from src.retrieval.twotower_minimal import TwoTower
+from src.retrieval.models.two_tower import TwoTower
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 FIXTURE_DATA_DIR = PROJECT_ROOT / "data" / "db"

@@ -2,16 +2,11 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass
-from functools import lru_cache
 from pathlib import Path
 from time import perf_counter
 
-import numpy as np
-import pandas as pd
 from redis import Redis
 from redis.exceptions import RedisError
-import torch
 
 from backend.src.core.config import Settings
 from backend.src.core.errors.common import InvalidRequestError
@@ -22,13 +17,22 @@ from backend.src.schemas.retrieval import (
     RetrievalRequest,
     RetrievalResponse,
 )
-
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-from src.retrieval.inference import (
-    load_item_embeddings,
-    load_retrieval_model,
-    reset_runtime_caches,
+from src.retrieval.monitoring.alerts import ensure_candidates_available
+from src.retrieval.monitoring.metrics import (
+    clear_state_metric_caches,
+    load_active_banner_ids,
+    load_popular_banner_scores,
+    load_seen_banner_history,
+    merge_seen_histories,
 )
+from src.retrieval.serving.api import build_fallback_candidates, search_top_k
+from src.retrieval.serving.loader import clear_runtime_caches, load_runtime
+from src.retrieval.serving.schemas import (
+    RetrievalResult,
+    RetrievalRuntime,
+    RetrievalState,
+)
+from src.retrieval.utils.common import resolve_project_path
 
 DEFAULT_INTERACTIONS = "data/db/banner_interactions.csv"
 DEFAULT_BANNERS = "data/db/banners.csv"
@@ -41,156 +45,27 @@ REDIS_LIVE_SEEN_HASH_KEY = "retrieval:live_seen_banners"
 logger = logging.getLogger(__name__)
 
 
-def _resolve_path(project_root: Path, raw_path: str | None, fallback: str) -> Path:
-    path = Path(raw_path or fallback)
-    if not path.is_absolute():
-        path = project_root / path
-    return path
-
-
-def _clear_state_caches() -> None:
-    _load_active_banner_ids.cache_clear()
-    _load_popular_banner_scores.cache_clear()
-    _load_seen_banner_history.cache_clear()
-
-
-def _merge_seen_histories(*histories: dict[str, set[str]]) -> dict[str, set[str]]:
-    merged: dict[str, set[str]] = {}
-    for history in histories:
-        for user_id, banner_ids in history.items():
-            merged.setdefault(str(user_id), set()).update(str(banner_id) for banner_id in banner_ids)
-    return merged
-
-
-@dataclass(frozen=True)
-class RetrievalRuntime:
-    artifact_dir: Path
-    model: object
-    user2idx: dict[str, int]
-    item2idx: dict[str, int]
-    idx2item: dict[int, str]
-    embedding_dim: int
-    device: torch.device
-    item_embeddings: torch.Tensor
-    metadata: dict
-    model_version: str
-
-
-@dataclass(frozen=True)
-class RetrievalCandidate:
-    banner_id: str
-    retrieval_rank: int
-    retrieval_score: float
-
-
-@dataclass(frozen=True)
-class RetrievalResult:
-    user_id: str
-    source: str
-    model_version: str
-    items: list[RetrievalCandidate]
-
-
-@dataclass
-class RetrievalState:
-    active_banner_ids: set[str]
-    popular_banner_scores: list[tuple[str, float]]
-    seen_banner_history: dict[str, set[str]]
-
-
-@lru_cache(maxsize=8)
-def _load_runtime(artifact_dir: str) -> RetrievalRuntime:
-    artifact_path = Path(artifact_dir)
-    metadata_path = artifact_path / "metadata.json"
-    if metadata_path.exists():
-        with metadata_path.open("r", encoding="utf-8") as file_obj:
-            metadata = json.load(file_obj)
-    else:
-        metadata = {"model_version": "pytorch_retrieval"}
-
-    model, user2idx, item2idx, idx2item, embedding_dim, device = load_retrieval_model(
-        artifact_dir=str(artifact_path),
-        device=torch.device("cpu"),
-    )
-    item_embeddings = load_item_embeddings(
-        artifact_dir=str(artifact_path),
-        model=model,
-        num_items=len(item2idx),
-        device=device,
-    )
-
-    model_version = str(metadata.get("model_version") or artifact_path.name)
-    return RetrievalRuntime(
-        artifact_dir=artifact_path,
-        model=model,
-        user2idx=user2idx,
-        item2idx=item2idx,
-        idx2item=idx2item,
-        embedding_dim=embedding_dim,
-        device=device,
-        item_embeddings=item_embeddings,
-        metadata=metadata,
-        model_version=model_version,
-    )
-
-
-@lru_cache(maxsize=8)
-def _load_active_banner_ids(banners_csv: str) -> set[str]:
-    banners = pd.read_csv(banners_csv)
-    if "banner_id" not in banners.columns or "is_active" not in banners.columns:
-        raise InvalidRequestError(
-            "banners_csv must contain banner_id and is_active columns."
-        )
-    active_ids = banners.loc[banners["is_active"] == 1, "banner_id"].astype(str)
-    return set(active_ids.tolist())
-
-
-@lru_cache(maxsize=8)
-def _load_popular_banner_scores(interactions_csv: str) -> list[tuple[str, float]]:
-    interactions = pd.read_csv(interactions_csv)
-    if "banner_id" not in interactions.columns or "clicks" not in interactions.columns:
-        raise InvalidRequestError(
-            "interactions_csv must contain banner_id and clicks columns."
-        )
-
-    popularity = (
-        interactions.groupby("banner_id", as_index=False)
-        .agg(
-            clicks=("clicks", "sum"),
-            impressions=("impressions", "sum"),
-        )
-        .sort_values(["clicks", "impressions", "banner_id"], ascending=[False, False, True])
-    )
-    return [
-        (str(row.banner_id), float(row.clicks + 0.1 * row.impressions))
-        for row in popularity.itertuples(index=False)
-    ]
-
-
-@lru_cache(maxsize=8)
-def _load_seen_banner_history(interactions_csv: str) -> dict[str, set[str]]:
-    interactions = pd.read_csv(interactions_csv, usecols=["user_id", "banner_id"])
-    grouped = interactions.groupby("user_id")["banner_id"].agg(list)
-    return {
-        str(user_id): {str(banner_id) for banner_id in banner_ids}
-        for user_id, banner_ids in grouped.items()
-    }
+def _load_metric(loader, *args):
+    try:
+        return loader(*args)
+    except ValueError as exc:
+        raise InvalidRequestError(str(exc)) from exc
 
 
 class RetrievalService:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
-        self.default_artifact_dir = _resolve_path(
+        self.default_artifact_dir = resolve_project_path(
             settings.project_root,
             None,
             DEFAULT_RETRIEVAL_ARTIFACTS,
         )
-        self.default_banners_csv = _resolve_path(
+        self.default_banners_csv = resolve_project_path(
             settings.project_root,
             None,
             DEFAULT_BANNERS,
         )
-        self.default_interactions_csv = _resolve_path(
+        self.default_interactions_csv = resolve_project_path(
             settings.project_root,
             None,
             DEFAULT_INTERACTIONS,
@@ -370,26 +245,32 @@ class RetrievalService:
 
     def refresh_state(self, force: bool = False) -> RetrievalState:
         if force:
-            _clear_state_caches()
+            clear_state_metric_caches()
 
         active_banner_ids: set[str] = set()
         popular_banner_scores: list[tuple[str, float]] = []
         seen_banner_history: dict[str, set[str]] = {}
 
         if self.default_banners_csv.exists():
-            active_banner_ids = _load_active_banner_ids(str(self.default_banners_csv))
+            active_banner_ids = _load_metric(load_active_banner_ids, str(self.default_banners_csv))
         if self.default_interactions_csv.exists():
-            popular_banner_scores = _load_popular_banner_scores(str(self.default_interactions_csv))
-            seen_banner_history = _load_seen_banner_history(str(self.default_interactions_csv))
+            popular_banner_scores = _load_metric(
+                load_popular_banner_scores,
+                str(self.default_interactions_csv),
+            )
+            seen_banner_history = _load_metric(
+                load_seen_banner_history,
+                str(self.default_interactions_csv),
+            )
 
         redis_live_seen_banner_history = self._read_live_seen_banner_history_from_redis()
         if redis_live_seen_banner_history is not None:
-            self.live_seen_banner_history = _merge_seen_histories(
+            self.live_seen_banner_history = merge_seen_histories(
                 redis_live_seen_banner_history,
                 self.live_seen_banner_history,
             )
 
-        seen_banner_history = _merge_seen_histories(
+        seen_banner_history = merge_seen_histories(
             seen_banner_history,
             self.live_seen_banner_history,
         )
@@ -436,12 +317,12 @@ class RetrievalService:
         )
 
     def _get_runtime(self, artifacts_dir: str | None) -> RetrievalRuntime:
-        artifact_path = _resolve_path(
+        artifact_path = resolve_project_path(
             self.settings.project_root,
             artifacts_dir,
             DEFAULT_RETRIEVAL_ARTIFACTS,
         )
-        return _load_runtime(str(artifact_path))
+        return load_runtime(str(artifact_path))
 
     def _get_seen_items(
         self,
@@ -451,7 +332,7 @@ class RetrievalService:
         if not request.exclude_seen:
             return set()
 
-        interactions_csv = _resolve_path(
+        interactions_csv = resolve_project_path(
             self.settings.project_root,
             request.interactions_csv,
             DEFAULT_INTERACTIONS,
@@ -461,7 +342,7 @@ class RetrievalService:
             if seen_banner_ids is None:
                 seen_banner_ids = self._get_state().seen_banner_history.get(request.user_id, set())
         else:
-            seen_history = _load_seen_banner_history(str(interactions_csv))
+            seen_history = _load_metric(load_seen_banner_history, str(interactions_csv))
             seen_banner_ids = seen_history.get(request.user_id, set())
         return {
             runtime.item2idx[banner_id]
@@ -473,7 +354,7 @@ class RetrievalService:
         if not request.only_active:
             return None
 
-        banners_csv = _resolve_path(
+        banners_csv = resolve_project_path(
             self.settings.project_root,
             request.banners_csv,
             DEFAULT_BANNERS,
@@ -483,65 +364,14 @@ class RetrievalService:
             if active_banner_ids is not None and active_banner_ids:
                 return active_banner_ids
             return self._get_state().active_banner_ids
-        return _load_active_banner_ids(str(banners_csv))
-
-    def _search_top_k(
-        self,
-        runtime: RetrievalRuntime,
-        user_id: str,
-        top_k: int,
-        seen_items: set[int],
-        active_banner_ids: set[str] | None,
-    ) -> list[RetrievalCandidate]:
-        user_idx = runtime.user2idx[user_id]
-        with torch.no_grad():
-            user_tensor = torch.tensor([user_idx], dtype=torch.long, device=runtime.device)
-            user_vector = runtime.model.encode_user(user_tensor)
-            scores = torch.matmul(user_vector, runtime.item_embeddings.T).squeeze(0).clone()
-
-            if seen_items:
-                seen_tensor = torch.tensor(sorted(seen_items), dtype=torch.long, device=runtime.device)
-                scores[seen_tensor] = -torch.inf
-
-            if active_banner_ids is not None:
-                inactive_indices = [
-                    item_idx
-                    for item_idx, banner_id in runtime.idx2item.items()
-                    if banner_id not in active_banner_ids
-                ]
-                if inactive_indices:
-                    inactive_tensor = torch.tensor(
-                        inactive_indices,
-                        dtype=torch.long,
-                        device=runtime.device,
-                    )
-                    scores[inactive_tensor] = -torch.inf
-
-            k = min(top_k, scores.numel())
-            top_scores, top_indices = torch.topk(scores, k=k)
-
-        items: list[RetrievalCandidate] = []
-        for rank, (item_idx, score) in enumerate(
-            zip(top_indices.cpu().tolist(), top_scores.cpu().tolist(), strict=False),
-            start=1,
-        ):
-            if not np.isfinite(score):
-                continue
-            items.append(
-                RetrievalCandidate(
-                    banner_id=runtime.idx2item[item_idx],
-                    retrieval_rank=rank,
-                    retrieval_score=float(score),
-                )
-            )
-        return items
+        return _load_metric(load_active_banner_ids, str(banners_csv))
 
     def _fallback_candidates(
         self,
         request: RetrievalRequest,
         active_banner_ids: set[str] | None,
-    ) -> list[RetrievalCandidate]:
-        interactions_csv = _resolve_path(
+    ):
+        interactions_csv = resolve_project_path(
             self.settings.project_root,
             request.interactions_csv,
             DEFAULT_INTERACTIONS,
@@ -551,21 +381,8 @@ class RetrievalService:
             if popular is None or not popular:
                 popular = self._get_state().popular_banner_scores
         else:
-            popular = _load_popular_banner_scores(str(interactions_csv))
-        items: list[RetrievalCandidate] = []
-        for banner_id, score in popular:
-            if active_banner_ids is not None and banner_id not in active_banner_ids:
-                continue
-            items.append(
-                RetrievalCandidate(
-                    banner_id=banner_id,
-                    retrieval_rank=len(items) + 1,
-                    retrieval_score=score,
-                )
-            )
-            if len(items) >= request.top_k:
-                break
-        return items
+            popular = _load_metric(load_popular_banner_scores, str(interactions_csv))
+        return build_fallback_candidates(popular, request.top_k, active_banner_ids)
 
     def get_candidates(self, request: RetrievalRequest) -> RetrievalResult:
         started_at = perf_counter()
@@ -574,20 +391,22 @@ class RetrievalService:
 
         if request.user_id in runtime.user2idx:
             seen_items = self._get_seen_items(request, runtime)
-            items = self._search_top_k(
-                runtime=runtime,
-                user_id=request.user_id,
-                top_k=request.top_k,
-                seen_items=seen_items,
-                active_banner_ids=active_banner_ids,
+            items = search_top_k(
+                runtime,
+                request.user_id,
+                request.top_k,
+                seen_items,
+                active_banner_ids,
             )
             source = "two_tower"
         else:
             items = self._fallback_candidates(request, active_banner_ids)
             source = "popular_fallback"
 
-        if not items:
-            raise InvalidRequestError("No retrieval candidates available for this request.")
+        try:
+            ensure_candidates_available(len(items))
+        except ValueError as exc:
+            raise InvalidRequestError(str(exc)) from exc
 
         result = RetrievalResult(
             user_id=request.user_id,
@@ -629,9 +448,8 @@ class RetrievalService:
 
     def reload(self) -> RetrievalReloadResponse:
         started_at = perf_counter()
-        reset_runtime_caches()
-        _load_runtime.cache_clear()
-        _clear_state_caches()
+        clear_runtime_caches()
+        clear_state_metric_caches()
         runtime = self._get_runtime(None)
         state = self.refresh_state(force=False)
         logger.info(

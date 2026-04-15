@@ -8,8 +8,9 @@ from src.retrieval.data.validate import (
     validate_banners_frame,
     validate_interactions_frame,
 )
+from src.retrieval.utils.common import project_root_from
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
+PROJECT_ROOT = project_root_from(__file__)
 DATA_DIR = PROJECT_ROOT / "data" / "db"
 DEFAULT_INTERACTIONS_CSV = DATA_DIR / "banner_interactions.csv"
 DEFAULT_BANNERS_CSV = DATA_DIR / "banners.csv"

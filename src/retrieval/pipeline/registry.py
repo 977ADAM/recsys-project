@@ -7,8 +7,9 @@ import pandas as pd
 import torch
 
 from src.retrieval.data.split import RetrievalDataSplits
+from src.retrieval.utils.common import project_root_from
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
+PROJECT_ROOT = project_root_from(__file__)
 DEFAULT_ARTIFACTS_DIR = PROJECT_ROOT / "artifacts" / "pytorch_retrieval"
 DEFAULT_TRAIN_END = pd.Timestamp("2026-02-28")
 DEFAULT_VALID_END = pd.Timestamp("2026-03-15")
