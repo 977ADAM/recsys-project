@@ -4,24 +4,16 @@ from functools import lru_cache
 import json
 from pathlib import Path
 
-import pandas as pd
 import torch
 import torch.nn as nn
 
-from src.retrieval.datasets import resolve_dataset_path
-from src.retrieval.preprocessing import build_mappings
+from src.retrieval.data.ingest import load_interactions_frame, resolve_dataset_path
+from src.retrieval.data.preprocess import build_mappings
 from src.retrieval.twotower_minimal import TwoTower
 
 DEFAULT_EMBEDDING_DIM = 64
 DEFAULT_EPOCHS = 25
 DEFAULT_LR = 1e-2
-
-
-def _load_interactions_frame(interactions_csv: str | Path) -> pd.DataFrame:
-    df = pd.read_csv(interactions_csv, parse_dates=["event_date"])
-    df["user_id"] = df["user_id"].astype(str)
-    df["banner_id"] = df["banner_id"].astype(str)
-    return df
 
 
 def _load_saved_runtime(
@@ -60,7 +52,7 @@ def _train_runtime(artifact_dir: str) -> tuple[TwoTower, dict[str, int], dict[st
 
     interactions_csv = resolve_dataset_path("banner_interactions.csv", artifact_dir)
     banners_csv = resolve_dataset_path("banners.csv", artifact_dir)
-    interactions = _load_interactions_frame(interactions_csv)
+    interactions = load_interactions_frame(interactions_csv, require_event_date=False)
     user2idx, item2idx, idx2item = build_mappings(interactions, str(banners_csv))
 
     filtered = interactions[
@@ -146,7 +138,7 @@ def recommend_top_n(
         if interactions_csv is not None
         else resolve_dataset_path("banner_interactions.csv", artifact_dir)
     )
-    interactions = _load_interactions_frame(interactions_path)
+    interactions = load_interactions_frame(interactions_path, require_event_date=False)
 
     if user_id not in user2idx:
         popularity = (
