@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import argparse
 import json
 from pathlib import Path
+from typing import Callable
 
 import pandas as pd
 from rich.console import Console
@@ -24,6 +24,8 @@ DEFAULT_EMBEDDING_DIM = 64
 DEFAULT_TRAIN_EPOCHS = 100
 DEFAULT_RUNTIME_EPOCHS = 25
 DEFAULT_LR = 0.01
+DEFAULT_TOWER_HIDDEN_DIMS = (128, 64)
+DEFAULT_TOWER_DROPOUT = 0.1
 
 console = Console()
 
@@ -46,18 +48,13 @@ def train_model(
     batch_size: int = 2048,
     shuffle: bool = True,
     weight_decay: float = 1e-5,
-    epoch_callback=None,
+    epoch_callback: Callable[[TwoTower, int, float], bool | None] | None = None,
 ) -> None:
-    
-
-
     if users.numel() == 0:
         raise ValueError("Training split is empty after encoding.")
-    
+
     if not (len(users) == len(banners) == len(labels)):
         raise ValueError("Users, banners, and labels must have the same length.")
-
-
 
     dataset = TensorDataset(users, banners, labels)
     loader = DataLoader(
@@ -95,7 +92,9 @@ def train_model(
         epoch_loss = total_loss / total_examples if total_examples > 0 else 0.0
 
         if epoch_callback is not None:
-            epoch_callback(model, epoch + 1, epoch_loss)
+            should_stop = epoch_callback(model, epoch + 1, epoch_loss)
+            if should_stop:
+                break
 
 
 def train_two_tower_model(
@@ -110,10 +109,10 @@ def train_two_tower_model(
     weight_decay: float = 1e-5,
     patience: int = 5,
     min_delta: float = 1e-4,
+    tower_hidden_dims: tuple[int, ...] = DEFAULT_TOWER_HIDDEN_DIMS,
+    tower_dropout: float = DEFAULT_TOWER_DROPOUT,
     progress_console: Console | None = None,
 ) -> tuple[TwoTower, dict[str, float]]:
-    
-    
     validate_training_data(data)
     torch.manual_seed(seed)
 
@@ -121,6 +120,8 @@ def train_two_tower_model(
         n_users=data.n_users,
         n_banners=data.n_banners,
         emb_dim=emb_dim,
+        hidden_dims=tower_hidden_dims,
+        dropout=tower_dropout,
     )
     best_state = None
     best_recall = float("-inf")
@@ -206,10 +207,10 @@ def main() -> None:
         lr=args.lr,
         seed=args.seed,
         recall_k=args.recall_k,
-        batch_size=getattr(args, "batch_size", 512),
-        weight_decay=getattr(args, "weight_decay", 1e-5),
-        patience=getattr(args, "patience", 10),
-        min_delta=getattr(args, "min_delta", 1e-4),
+        batch_size=args.batch_size,
+        weight_decay=args.weight_decay,
+        patience=args.patience,
+        min_delta=args.min_delta,
         progress_console=console,
     )
 

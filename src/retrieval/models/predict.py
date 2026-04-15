@@ -16,6 +16,8 @@ from src.retrieval.models.train import (
     DEFAULT_EMBEDDING_DIM,
     DEFAULT_LR,
     DEFAULT_RUNTIME_EPOCHS,
+    DEFAULT_TOWER_DROPOUT,
+    DEFAULT_TOWER_HIDDEN_DIMS,
     train_model,
 )
 from src.retrieval.models.two_tower import TwoTower
@@ -43,6 +45,8 @@ def _train_runtime(artifact_dir: str) -> tuple[TwoTower, dict[str, int], dict[st
         n_users=len(user2idx),
         n_banners=len(item2idx),
         emb_dim=DEFAULT_EMBEDDING_DIM,
+        hidden_dims=DEFAULT_TOWER_HIDDEN_DIMS,
+        dropout=DEFAULT_TOWER_DROPOUT,
     )
     train_model(
         model,
@@ -79,7 +83,7 @@ def load_item_embeddings(
 ) -> torch.Tensor:
     del artifact_dir, num_items
     device = device or torch.device("cpu")
-    return model.banner_tower.weight.detach().to(device)
+    return model.encode_all_banners().detach().to(device)
 
 
 def recommend_top_n(
@@ -113,7 +117,7 @@ def recommend_top_n(
         user_tensor = torch.tensor([user2idx[user_id]], dtype=torch.long, device=device)
         scores = torch.matmul(
             model.encode_user(user_tensor),
-            model.banner_tower.weight.detach().to(device).T,
+            model.encode_all_banners().detach().to(device).T,
         ).squeeze(0)
 
         if exclude_seen:
@@ -131,5 +135,4 @@ def recommend_top_n(
         k = min(top_n, scores.numel())
         top_indices = torch.topk(scores, k=k).indices.cpu().tolist()
     return [idx2item[item_idx] for item_idx in top_indices if item_idx in idx2item]
-
 

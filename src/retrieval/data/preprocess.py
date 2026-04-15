@@ -82,11 +82,17 @@ def build_negatives_pairs(
     frame: pd.DataFrame,
     *,
     negatives_per_positive: int = 3,
+    hard_negative_ratio: float = 0.5,
     seed: int = 42,
 ) -> pd.DataFrame:
     if frame.empty:
         return pd.DataFrame(columns=["user_id", "banner_id", "label"])
-    
+
+    if negatives_per_positive <= 0:
+        return pd.DataFrame(columns=["user_id", "banner_id", "label"])
+    if not 0.0 <= hard_negative_ratio <= 1.0:
+        raise ValueError("hard_negative_ratio must be between 0.0 and 1.0.")
+
     rng = np.random.default_rng(seed)
 
     positives = (
@@ -97,6 +103,12 @@ def build_negatives_pairs(
     positives["label"] = 1.0
 
     all_banners = frame["banner_id"].drop_duplicates().astype(str).to_numpy()
+    banner_popularity = (
+        frame.groupby("banner_id", as_index=False)
+        .agg(clicks=("clicks", "sum"), impressions=("impressions", "sum"))
+        .sort_values(["clicks", "impressions", "banner_id"], ascending=[False, False, True])
+    )
+    popular_banners = banner_popularity["banner_id"].astype(str).tolist()
 
     user_seen = (
         frame.loc[frame["clicks"] > 0, ["user_id", "banner_id"]]
@@ -105,22 +117,67 @@ def build_negatives_pairs(
         .agg(lambda x: set(x.astype(str)))
         .to_dict()
     )
+    hard_negative_pool = (
+        frame.loc[
+            (frame["impressions"] > 0) & (frame["clicks"] <= 0),
+            ["user_id", "banner_id", "impressions"],
+        ]
+        .copy()
+        .sort_values(["user_id", "impressions", "banner_id"], ascending=[True, False, True])
+        .groupby("user_id")["banner_id"]
+        .agg(lambda banners: list(dict.fromkeys(banners.astype(str))))
+        .to_dict()
+    )
 
     negative_rows: list[dict[str, object]] = []
 
     for row in positives.itertuples(index=False):
         user_id = str(row.user_id)
-        pos_banner = str(row.banner_id)
-        seen = user_seen.get(user_id, set())
+        clicked_banners = user_seen.get(user_id, set())
 
-        candidate_pool = [b for b in all_banners if b not in seen]
-        if not candidate_pool:
-            continue
+        selected_negatives: list[str] = []
 
-        sample_size = min(negatives_per_positive, len(candidate_pool))
-        sampled_negatives = rng.choice(candidate_pool, size=sample_size, replace=False)
+        hard_candidates = [
+            banner_id
+            for banner_id in hard_negative_pool.get(user_id, [])
+            if banner_id not in clicked_banners
+        ]
+        hard_target = min(
+            len(hard_candidates),
+            int(np.ceil(negatives_per_positive * hard_negative_ratio)),
+        )
+        if hard_target > 0:
+            selected_negatives.extend(hard_candidates[:hard_target])
 
-        for neg_banner in sampled_negatives:
+        selected_set = set(selected_negatives)
+        remaining_budget = negatives_per_positive - len(selected_negatives)
+
+        popular_candidates = [
+            banner_id
+            for banner_id in popular_banners
+            if banner_id not in clicked_banners and banner_id not in selected_set
+        ]
+        if remaining_budget > 0 and popular_candidates:
+            sample_size = min(remaining_budget, len(popular_candidates))
+            sampled_popular = rng.choice(popular_candidates, size=sample_size, replace=False)
+            sampled_popular = np.atleast_1d(sampled_popular).tolist()
+            selected_negatives.extend(str(banner_id) for banner_id in sampled_popular)
+            selected_set.update(str(banner_id) for banner_id in sampled_popular)
+
+        remaining_budget = negatives_per_positive - len(selected_negatives)
+        if remaining_budget > 0:
+            random_candidates = [
+                banner_id
+                for banner_id in all_banners
+                if banner_id not in clicked_banners and banner_id not in selected_set
+            ]
+            if random_candidates:
+                sample_size = min(remaining_budget, len(random_candidates))
+                sampled_random = rng.choice(random_candidates, size=sample_size, replace=False)
+                sampled_random = np.atleast_1d(sampled_random).tolist()
+                selected_negatives.extend(str(banner_id) for banner_id in sampled_random)
+
+        for neg_banner in selected_negatives:
             negative_rows.append(
                 {
                     "user_id": user_id,
