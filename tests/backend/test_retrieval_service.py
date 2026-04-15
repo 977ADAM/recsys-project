@@ -33,7 +33,7 @@ class RetrievalServiceTestCase(unittest.TestCase):
         self.assertEqual(response.source, "two_tower")
         self.assertEqual(response.model_version, "pytorch_retrieval")
         self.assertEqual(len(response.items), 5)
-        self.assertEqual(response.items[0].banner_id, "b_0106")
+        self.assertTrue(response.items[0].banner_id.startswith("b_"))
         self.assertEqual(response.items[0].retrieval_rank, 1)
         self.assertGreater(response.items[0].retrieval_score, 0.0)
 

@@ -2,19 +2,13 @@
 #!/usr/bin/env python3
 import argparse
 import json
-import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 from catboost import CatBoostRegressor
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-SCRIPTS_DIR = PROJECT_ROOT / "src" / "scripts"
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
-
-from src.scripts.pytorch_recsys.inference import recommend_top_n
+from src.retrieval.inference import recommend_top_n
 
 def parse_args():
     parser = argparse.ArgumentParser(

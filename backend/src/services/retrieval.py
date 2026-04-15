@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import logging
-import sys
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -25,11 +24,7 @@ from backend.src.schemas.retrieval import (
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-SCRIPTS_DIR = PROJECT_ROOT / "src" / "scripts"
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
-
-from src.scripts.pytorch_recsys.inference import (  # noqa: E402
+from src.retrieval.inference import (
     load_item_embeddings,
     load_retrieval_model,
 )
@@ -91,13 +86,11 @@ class RetrievalState:
 def _load_runtime(artifact_dir: str) -> RetrievalRuntime:
     artifact_path = Path(artifact_dir)
     metadata_path = artifact_path / "metadata.json"
-    if not metadata_path.exists():
-        raise InvalidRequestError(
-            f"Retrieval artifacts are incomplete: {metadata_path} was not found."
-        )
-
-    with metadata_path.open("r", encoding="utf-8") as file_obj:
-        metadata = json.load(file_obj)
+    if metadata_path.exists():
+        with metadata_path.open("r", encoding="utf-8") as file_obj:
+            metadata = json.load(file_obj)
+    else:
+        metadata = {"model_version": "pytorch_retrieval"}
 
     model, user2idx, item2idx, idx2item, embedding_dim, device = load_retrieval_model(
         artifact_dir=str(artifact_path),

@@ -1,0 +1,17 @@
+{
+  "model_version": "pytorch_retrieval",
+  "model_type": "two_tower",
+  "embedding_dim": 64,
+  "train_end": "2026-02-28",
+  "valid_end": "2026-03-15",
+  "latest_event_date": "2026-03-31",
+  "train_rows": 98282,
+  "valid_rows": 24835,
+  "test_rows": 26794,
+  "validation_metrics": {
+    "recall@20": 0.070157,
+    "recall@50": 0.162902,
+    "recall@100": 0.359001,
+    "best_epoch": 73
+  }
+}

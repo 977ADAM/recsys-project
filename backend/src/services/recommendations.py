@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 import torch
 from catboost import CatBoostRegressor
+from sklearn.metrics import mean_squared_error
 from sklearn.preprocessing import StandardScaler
 from torch.utils.data import DataLoader
 
@@ -19,13 +20,13 @@ from backend.src.schemas.recommendations import (
     RecommendationResponse,
 )
 from backend.src.services.retrieval import RetrievalService
-from src.pipeline.inference import (
+from src.ranker.inference import (
     add_base_features,
     attach_recent_user_banner_history,
     load_history_tables,
     merge_history_features,
 )
-from src.pipeline.deepfm import train_deepfm as deepfm_pipeline
+from src.ranker.deepfm import train_deepfm as deepfm_pipeline
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
@@ -43,7 +44,214 @@ def _resolve_path(project_root: Path, raw_path: str | None, fallback: str) -> Pa
     return path
 
 
-def _resolve_artifacts_path(project_root: Path, raw_path: str | None) -> Path:
+def _train_default_deepfm_artifacts(
+    *,
+    output_dir: Path,
+    interactions_csv: Path,
+    users_csv: Path,
+    banners_csv: Path,
+) -> Path:
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    deepfm_pipeline.set_seed(42)
+    df = deepfm_pipeline.load_data(str(interactions_csv), str(users_csv), str(banners_csv))
+    df = deepfm_pipeline.add_base_features(df)
+    df, global_ctr, _ = deepfm_pipeline.build_training_table(df)
+    df = deepfm_pipeline.fill_dense_na(df, deepfm_pipeline.DENSE_FEATURES)
+
+    max_date = df["event_date"].max()
+    valid_start = max_date - pd.Timedelta(days=13)
+    train_df = df[df["event_date"] < valid_start].copy()
+    valid_df = df[df["event_date"] >= valid_start].copy()
+    if train_df.empty or valid_df.empty:
+        raise InvalidRequestError(
+            f"Time split produced an empty dataset while bootstrapping ranking artifacts. valid_start={valid_start.date()}"
+        )
+
+    vocabs = {
+        feat: deepfm_pipeline.build_vocab(train_df[feat])
+        for feat in deepfm_pipeline.CAT_FEATURES
+    }
+    cat_cardinalities = {feat: len(vocab) for feat, vocab in vocabs.items()}
+
+    scaler = StandardScaler()
+    train_dense = scaler.fit_transform(train_df[deepfm_pipeline.DENSE_FEATURES].astype(np.float32))
+    valid_dense = scaler.transform(valid_df[deepfm_pipeline.DENSE_FEATURES].astype(np.float32))
+    train_cat = deepfm_pipeline.encode_categorical_frame(
+        train_df,
+        vocabs,
+        deepfm_pipeline.CAT_FEATURES,
+    )
+    valid_cat = deepfm_pipeline.encode_categorical_frame(
+        valid_df,
+        vocabs,
+        deepfm_pipeline.CAT_FEATURES,
+    )
+
+    train_ds = deepfm_pipeline.TabularDataset(
+        train_cat,
+        train_dense,
+        train_df["clicks"].to_numpy(dtype=np.float32),
+        train_df["impressions"].to_numpy(dtype=np.float32),
+    )
+    valid_ds = deepfm_pipeline.TabularDataset(
+        valid_cat,
+        valid_dense,
+        valid_df["clicks"].to_numpy(dtype=np.float32),
+        valid_df["impressions"].to_numpy(dtype=np.float32),
+    )
+    train_loader = DataLoader(train_ds, batch_size=8192, shuffle=True, num_workers=0)
+    valid_loader = DataLoader(valid_ds, batch_size=8192, shuffle=False, num_workers=0)
+
+    device = torch.device("cpu")
+    hidden_dims = [128, 64]
+    dropout = 0.1
+    emb_dim = 16
+    model = deepfm_pipeline.DeepFM(
+        cat_cardinalities=cat_cardinalities,
+        dense_dim=len(deepfm_pipeline.DENSE_FEATURES),
+        hidden_dims=hidden_dims,
+        dropout=dropout,
+        emb_dim=emb_dim,
+    ).to(device)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-6)
+
+    best_state = None
+    best_valid_loss = float("inf")
+    best_epoch = 0
+    for epoch in range(1, 3):
+        model.train()
+        for cat_x, dense_x, clicks, impressions in train_loader:
+            cat_x = cat_x.to(device)
+            dense_x = dense_x.to(device)
+            clicks = clicks.to(device)
+            impressions = impressions.to(device)
+            optimizer.zero_grad()
+            logits = model(cat_x, dense_x)
+            loss = deepfm_pipeline.aggregated_logloss_from_logits(logits, clicks, impressions)
+            loss.backward()
+            optimizer.step()
+
+        model.eval()
+        valid_loss_sum = 0.0
+        valid_impr_sum = 0.0
+        with torch.no_grad():
+            for cat_x, dense_x, clicks, impressions in valid_loader:
+                cat_x = cat_x.to(device)
+                dense_x = dense_x.to(device)
+                clicks = clicks.to(device)
+                impressions = impressions.to(device)
+                logits = model(cat_x, dense_x)
+                loss = deepfm_pipeline.aggregated_logloss_from_logits(logits, clicks, impressions)
+                batch_impr = impressions.sum().item()
+                valid_loss_sum += loss.item() * batch_impr
+                valid_impr_sum += batch_impr
+
+        valid_logloss = valid_loss_sum / max(valid_impr_sum, 1.0)
+        if valid_logloss < best_valid_loss:
+            best_valid_loss = valid_logloss
+            best_epoch = epoch
+            best_state = {
+                key: value.detach().cpu().clone()
+                for key, value in model.state_dict().items()
+            }
+
+    if best_state is None:
+        raise InvalidRequestError("Failed to bootstrap DeepFM artifacts.")
+
+    model.load_state_dict(best_state)
+    valid_pred = deepfm_pipeline.predict_dataset(model, valid_loader, device)
+    valid_df = valid_df.copy()
+    valid_df["pred_ctr"] = np.clip(valid_pred, 0.0, 1.0)
+
+    checkpoint = {
+        "model_state_dict": model.state_dict(),
+        "cat_features": deepfm_pipeline.CAT_FEATURES,
+        "dense_features": deepfm_pipeline.DENSE_FEATURES,
+        "feature_cols": deepfm_pipeline.FEATURE_COLS,
+        "cat_cardinalities": cat_cardinalities,
+        "embedding_dim": emb_dim,
+        "vocabs": vocabs,
+        "scaler_mean": scaler.mean_.tolist(),
+        "scaler_scale": scaler.scale_.tolist(),
+        "hidden_dims": hidden_dims,
+        "dropout": dropout,
+        "global_ctr": float(global_ctr),
+    }
+    torch.save(checkpoint, output_dir / "deepfm_model.pt")
+
+    history_tables, history_specs = deepfm_pipeline.compute_full_history_tables(df, global_ctr)
+    for table_name, table_df in history_tables.items():
+        table_df.to_csv(
+            output_dir / f"{table_name}_history.csv.gz",
+            index=False,
+            compression="gzip",
+        )
+
+    metrics = {
+        "global_ctr": float(global_ctr),
+        "train_rows": int(len(train_df)),
+        "valid_rows": int(len(valid_df)),
+        "train_start": str(train_df["event_date"].min().date()),
+        "train_end": str(train_df["event_date"].max().date()),
+        "valid_start": str(valid_df["event_date"].min().date()),
+        "valid_end": str(valid_df["event_date"].max().date()),
+        "best_epoch": int(best_epoch),
+        "weighted_rmse": deepfm_pipeline.weighted_rmse(
+            valid_df["target_ctr"].to_numpy(),
+            valid_df["pred_ctr"].to_numpy(),
+            valid_df["impressions"].to_numpy(),
+        ),
+        "rmse_unweighted": float(
+            np.sqrt(mean_squared_error(valid_df["target_ctr"], valid_df["pred_ctr"]))
+        ),
+        "aggregated_logloss": deepfm_pipeline.aggregated_logloss_numpy(
+            valid_df["pred_ctr"].to_numpy(),
+            valid_df["clicks"].to_numpy(),
+            valid_df["impressions"].to_numpy(),
+        ),
+        "ndcg_at_5": deepfm_pipeline.ndcg_at_k(valid_df, k=5),
+        "mean_pred_ctr": float(valid_df["pred_ctr"].mean()),
+        "mean_actual_ctr": float(valid_df["target_ctr"].mean()),
+    }
+    metadata = {
+        "model_type": "deepfm",
+        "feature_cols": deepfm_pipeline.FEATURE_COLS,
+        "cat_features": deepfm_pipeline.CAT_FEATURES,
+        "dense_features": deepfm_pipeline.DENSE_FEATURES,
+        "global_ctr": float(global_ctr),
+        "latest_event_date": str(max_date.date()),
+        "valid_days": 14,
+        "hidden_dims": hidden_dims,
+        "embedding_dim": emb_dim,
+        "dropout": dropout,
+        "history_specs": {
+            name: {
+                "group_cols": group_cols,
+                "feature_name": feature_name,
+                "alpha": alpha,
+            }
+            for name, (group_cols, feature_name, alpha) in history_specs.items()
+        },
+        "user_cols": deepfm_pipeline.USER_COLS,
+        "banner_cols": deepfm_pipeline.BANNER_COLS,
+        "default_score_mode": "ctr",
+    }
+    with (output_dir / "metadata.json").open("w", encoding="utf-8") as file_obj:
+        json.dump(metadata, file_obj, ensure_ascii=False, indent=2)
+    with (output_dir / "metrics.json").open("w", encoding="utf-8") as file_obj:
+        json.dump(metrics, file_obj, ensure_ascii=False, indent=2)
+
+    return output_dir
+
+
+def _resolve_artifacts_path(
+    project_root: Path,
+    raw_path: str | None,
+    interactions_csv: Path,
+    users_csv: Path,
+    banners_csv: Path,
+) -> Path:
     if raw_path is not None:
         return _resolve_path(project_root, raw_path, raw_path)
 
@@ -55,8 +263,11 @@ def _resolve_artifacts_path(project_root: Path, raw_path: str | None) -> Path:
     if (ctr_path / "metadata.json").exists():
         return ctr_path
 
-    raise InvalidRequestError(
-        "Model artifacts were not found. Set artifacts_dir explicitly or create metadata.json in deepfm_artifacts or ctr_artifacts."
+    return _train_default_deepfm_artifacts(
+        output_dir=deepfm_path,
+        interactions_csv=interactions_csv,
+        users_csv=users_csv,
+        banners_csv=banners_csv,
     )
 
 
@@ -194,13 +405,24 @@ def recommend_banners(
     settings: Settings,
     retrieval_service: RetrievalService,
 ) -> RecommendationResponse:
-    artifacts_dir = _resolve_artifacts_path(settings.project_root, request.artifacts_dir)
     users_csv = _resolve_path(settings.project_root, request.users_csv, DEFAULT_USERS)
     banners_csv = _resolve_path(settings.project_root, request.banners_csv, DEFAULT_BANNERS)
     interactions_csv = (
         _resolve_path(settings.project_root, request.interactions_csv, DEFAULT_INTERACTIONS)
         if request.exclude_seen or request.interactions_csv is not None
         else None
+    )
+    training_interactions_csv = _resolve_path(
+        settings.project_root,
+        request.interactions_csv,
+        DEFAULT_INTERACTIONS,
+    )
+    artifacts_dir = _resolve_artifacts_path(
+        settings.project_root,
+        request.artifacts_dir,
+        training_interactions_csv,
+        users_csv,
+        banners_csv,
     )
 
     try:

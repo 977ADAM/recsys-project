@@ -1,0 +1,16 @@
+{
+  "global_ctr": 0.034297020799805886,
+  "train_rows": 126381,
+  "valid_rows": 23530,
+  "train_start": "2026-01-01",
+  "train_end": "2026-03-17",
+  "valid_start": "2026-03-18",
+  "valid_end": "2026-03-31",
+  "best_epoch": 1,
+  "weighted_rmse": 0.15472179787965676,
+  "rmse_unweighted": 0.1663801910767734,
+  "aggregated_logloss": 0.28527867569526116,
+  "ndcg_at_5": 0.65572806806901,
+  "mean_pred_ctr": 0.042944248765707016,
+  "mean_actual_ctr": 0.031167272190434112
+}
