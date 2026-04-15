@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import torch
 
@@ -49,7 +50,13 @@ def encode_frame(
 
     users = torch.tensor(frame["user_id"].map(user2idx).to_numpy(), dtype=torch.long)
     banners = torch.tensor(frame["banner_id"].map(item2idx).to_numpy(), dtype=torch.long)
-    labels = torch.tensor((frame["clicks"] > 0).astype("float32").to_numpy(), dtype=torch.float32)
+
+    if "label" in frame.columns:
+        label_values = frame["label"].astype("float32").to_numpy()
+    else:
+        label_values = (frame["clicks"] > 0).astype("float32").to_numpy()
+
+    labels = torch.tensor(label_values, dtype=torch.float32)
     return users, banners, labels
 
 
@@ -70,9 +77,66 @@ def build_positive_pairs(
     return positive_df[["user_idx", "banner_idx"]]
 
 
-__all__ = [
-    "build_mappings",
-    "filter_known_entities",
-    "encode_frame",
-    "build_positive_pairs",
-]
+
+def build_negatives_pairs(
+    frame: pd.DataFrame,
+    *,
+    negatives_per_positive: int = 3,
+    seed: int = 42,
+) -> pd.DataFrame:
+    if frame.empty:
+        return pd.DataFrame(columns=["user_id", "banner_id", "label"])
+    
+    rng = np.random.default_rng(seed)
+
+    positives = (
+        frame.loc[frame["clicks"] > 0, ["user_id", "banner_id"]]
+        .drop_duplicates()
+        .copy()
+    )
+    positives["label"] = 1.0
+
+    all_banners = frame["banner_id"].drop_duplicates().astype(str).to_numpy()
+
+    user_seen = (
+        frame.loc[frame["clicks"] > 0, ["user_id", "banner_id"]]
+        .drop_duplicates()
+        .groupby("user_id")["banner_id"]
+        .agg(lambda x: set(x.astype(str)))
+        .to_dict()
+    )
+
+    negative_rows: list[dict[str, object]] = []
+
+    for row in positives.itertuples(index=False):
+        user_id = str(row.user_id)
+        pos_banner = str(row.banner_id)
+        seen = user_seen.get(user_id, set())
+
+        candidate_pool = [b for b in all_banners if b not in seen]
+        if not candidate_pool:
+            continue
+
+        sample_size = min(negatives_per_positive, len(candidate_pool))
+        sampled_negatives = rng.choice(candidate_pool, size=sample_size, replace=False)
+
+        for neg_banner in sampled_negatives:
+            negative_rows.append(
+                {
+                    "user_id": user_id,
+                    "banner_id": str(neg_banner),
+                    "label": 0.0,
+                }
+            )
+
+    negatives = pd.DataFrame(negative_rows, columns=["user_id", "banner_id", "label"])
+
+    result = pd.concat(
+        [
+            positives[["user_id", "banner_id", "label"]],
+            negatives,
+        ],
+        ignore_index=True,
+    )
+
+    return result.sample(frac=1.0, random_state=seed).reset_index(drop=True)

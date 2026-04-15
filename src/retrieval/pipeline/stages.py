@@ -8,6 +8,7 @@ from src.retrieval.data.preprocess import (
     build_positive_pairs,
     encode_frame,
     filter_known_entities,
+    build_negatives_pairs,
 )
 from src.retrieval.data.split import RetrievalDataSplits, split_interactions_by_time
 from src.retrieval.pipeline.registry import (
@@ -50,6 +51,18 @@ def run_preprocess_stage(
 ) -> PreparedRetrievalData:
     user2idx, item2idx, idx2item = build_mappings(splits.train, config.banners_path)
 
+    train_frame = filter_known_entities(splits.train, user2idx, item2idx)
+    train_pairs = build_negatives_pairs(
+        train_frame,
+        negatives_per_positive=3,
+        seed=42,
+    )
+    train_users, train_banners, train_labels = encode_frame(train_pairs, user2idx, item2idx)
+    train_positive_pairs = build_positive_pairs(train_frame, user2idx, item2idx)
+
+    valid_encoded = _encode_split(splits.valid, user2idx, item2idx)
+    test_encoded = _encode_split(splits.test, user2idx, item2idx)
+
     return PreparedRetrievalData(
         n_users=len(user2idx),
         n_banners=len(item2idx),
@@ -57,7 +70,13 @@ def run_preprocess_stage(
         item2idx=item2idx,
         idx2item=idx2item,
         raw_splits=splits,
-        train=_encode_split(splits.train, user2idx, item2idx),
-        valid=_encode_split(splits.valid, user2idx, item2idx),
-        test=_encode_split(splits.test, user2idx, item2idx),
+        train=EncodedSplit(
+            frame=train_pairs,
+            users=train_users,
+            banners=train_banners,
+            labels=train_labels,
+            positive_pairs=train_positive_pairs,
+        ),
+        valid=valid_encoded,
+        test=test_encoded,
     )

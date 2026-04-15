@@ -6,14 +6,14 @@
   "train_end": "2026-02-28",
   "valid_end": "2026-03-15",
   "latest_event_date": "2026-03-31",
-  "train_rows": 98282,
+  "train_rows": 45832,
   "valid_rows": 24835,
   "test_rows": 26794,
   "validation_metrics": {
-    "recall@20": 0.065708,
-    "recall@50": 0.171116,
-    "recall@100": 0.358316,
-    "best_epoch": 97
+    "recall@20": 0.072895,
+    "recall@50": 0.183436,
+    "recall@100": 0.36037,
+    "best_epoch": 89
   },
   "training_data": {
     "interactions_csv": "data/db/banner_interactions.csv"

@@ -107,6 +107,9 @@ def train_two_tower_model(
     seed: int = 42,
     recall_k: int = 100,
     batch_size: int = 2048,
+    weight_decay: float = 1e-5,
+    patience: int = 5,
+    min_delta: float = 1e-4,
     progress_console: Console | None = None,
 ) -> tuple[TwoTower, dict[str, float]]:
     
@@ -122,25 +125,43 @@ def train_two_tower_model(
     best_state = None
     best_recall = float("-inf")
     best_epoch = 0
+    epochs_without_improvement = 0
 
     def on_epoch(current_model: TwoTower, epoch: int, loss_value: float) -> None:
-        nonlocal best_state, best_recall, best_epoch
+        nonlocal best_state, best_recall, best_epoch, epochs_without_improvement
+
         current_model.eval()
         with torch.no_grad():
             recall = recall_at_k(current_model, data.valid.positive_pairs, k=recall_k)
 
-        if recall > best_recall:
+        improved = recall > (best_recall + min_delta)
+
+        if improved:
             best_recall = recall
             best_epoch = epoch
+            epochs_without_improvement = 0
             best_state = {
                 key: value.detach().cpu().clone()
                 for key, value in current_model.state_dict().items()
             }
+        else:
+            epochs_without_improvement += 1
 
         if progress_console is not None:
             progress_console.print(
-                f"epoch={epoch} train_loss={loss_value:.4f} valid_recall@{recall_k}={recall:.4f}"
+                f"epoch={epoch} train_loss={loss_value:.4f} valid_recall@{recall_k}={recall:.4f} best_recall@{recall_k}={best_recall:.4f} no_improve={epochs_without_improvement}/{patience}"
             )
+
+        if epochs_without_improvement >= patience:
+            if progress_console is not None:
+                progress_console.print(
+                    f"early_stopping_triggered epoch={epoch} "
+                    f"best_epoch={best_epoch} "
+                    f"best_valid_recall@{recall_k}={best_recall:.4f}"
+                )
+            return True
+        
+        return False
 
     train_model(
         model,
@@ -150,6 +171,7 @@ def train_two_tower_model(
         epochs=epochs,
         lr=lr,
         batch_size=batch_size,
+        weight_decay=weight_decay,
         epoch_callback=on_epoch,
     )
 
@@ -185,6 +207,9 @@ def main() -> None:
         seed=args.seed,
         recall_k=args.recall_k,
         batch_size=getattr(args, "batch_size", 512),
+        weight_decay=getattr(args, "weight_decay", 1e-5),
+        patience=getattr(args, "patience", 10),
+        min_delta=getattr(args, "min_delta", 1e-4),
         progress_console=console,
     )
 
