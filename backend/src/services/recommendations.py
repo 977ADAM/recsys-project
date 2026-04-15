@@ -20,6 +20,10 @@ from backend.src.schemas.recommendations import (
     RecommendationResponse,
 )
 from backend.src.services.retrieval import RetrievalService
+from src.ranker.artifacts import (
+    default_ranker_artifacts_path,
+    legacy_ranker_artifacts_paths,
+)
 from src.ranker.inference import (
     add_base_features,
     attach_recent_user_banner_history,
@@ -33,8 +37,6 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_INTERACTIONS = "data/db/banner_interactions.csv"
 DEFAULT_USERS = "data/db/users.csv"
 DEFAULT_BANNERS = "data/db/banners.csv"
-DEFAULT_CTR_ARTIFACTS = "ctr_artifacts"
-DEFAULT_DEEPFM_ARTIFACTS = "deepfm_artifacts"
 
 
 def _resolve_path(project_root: Path, raw_path: str | None, fallback: str) -> Path:
@@ -44,8 +46,13 @@ def _resolve_path(project_root: Path, raw_path: str | None, fallback: str) -> Pa
     return path
 
 
+def _file_mtime_ns(path: Path) -> int:
+    return path.stat().st_mtime_ns
+
+
 def _train_default_deepfm_artifacts(
     *,
+    project_root: Path,
     output_dir: Path,
     interactions_csv: Path,
     users_csv: Path,
@@ -214,29 +221,38 @@ def _train_default_deepfm_artifacts(
         "mean_pred_ctr": float(valid_df["pred_ctr"].mean()),
         "mean_actual_ctr": float(valid_df["target_ctr"].mean()),
     }
-    metadata = {
-        "model_type": "deepfm",
-        "feature_cols": deepfm_pipeline.FEATURE_COLS,
-        "cat_features": deepfm_pipeline.CAT_FEATURES,
-        "dense_features": deepfm_pipeline.DENSE_FEATURES,
-        "global_ctr": float(global_ctr),
-        "latest_event_date": str(max_date.date()),
-        "valid_days": 14,
-        "hidden_dims": hidden_dims,
-        "embedding_dim": emb_dim,
-        "dropout": dropout,
-        "history_specs": {
-            name: {
-                "group_cols": group_cols,
-                "feature_name": feature_name,
-                "alpha": alpha,
-            }
-            for name, (group_cols, feature_name, alpha) in history_specs.items()
+    metadata = deepfm_pipeline.build_artifact_metadata(
+        model_type="deepfm",
+        global_ctr=global_ctr,
+        max_date=max_date,
+        valid_days=14,
+        hidden_dims=hidden_dims,
+        embedding_dim=emb_dim,
+        dropout=dropout,
+        history_specs=history_specs,
+        interactions_csv=interactions_csv,
+        users_csv=users_csv,
+        banners_csv=banners_csv,
+        output_dir=output_dir,
+        training_config={
+            "epochs_requested": 2,
+            "epochs_completed": epoch,
+            "batch_size": 8192,
+            "learning_rate": 1e-3,
+            "weight_decay": 1e-6,
+            "dropout": dropout,
+            "hidden_dims": hidden_dims,
+            "embedding_dim": emb_dim,
+            "patience": None,
+            "random_seed": 42,
+            "device": str(device),
+            "train_rows": int(len(train_df)),
+            "valid_rows": int(len(valid_df)),
+            "best_epoch": int(best_epoch),
+            "bootstrap_source": "backend_default_bootstrap",
         },
-        "user_cols": deepfm_pipeline.USER_COLS,
-        "banner_cols": deepfm_pipeline.BANNER_COLS,
-        "default_score_mode": "ctr",
-    }
+        project_root=project_root,
+    )
     with (output_dir / "metadata.json").open("w", encoding="utf-8") as file_obj:
         json.dump(metadata, file_obj, ensure_ascii=False, indent=2)
     with (output_dir / "metrics.json").open("w", encoding="utf-8") as file_obj:
@@ -255,16 +271,14 @@ def _resolve_artifacts_path(
     if raw_path is not None:
         return _resolve_path(project_root, raw_path, raw_path)
 
-    deepfm_path = _resolve_path(project_root, None, DEFAULT_DEEPFM_ARTIFACTS)
-    if (deepfm_path / "metadata.json").exists():
-        return deepfm_path
-
-    ctr_path = _resolve_path(project_root, None, DEFAULT_CTR_ARTIFACTS)
-    if (ctr_path / "metadata.json").exists():
-        return ctr_path
+    default_path = default_ranker_artifacts_path(project_root)
+    for candidate in [default_path, *legacy_ranker_artifacts_paths(project_root)]:
+        if (candidate / "metadata.json").exists():
+            return candidate
 
     return _train_default_deepfm_artifacts(
-        output_dir=deepfm_path,
+        project_root=project_root,
+        output_dir=default_path,
         interactions_csv=interactions_csv,
         users_csv=users_csv,
         banners_csv=banners_csv,
@@ -272,10 +286,15 @@ def _resolve_artifacts_path(
 
 
 @lru_cache(maxsize=8)
-def _load_metadata(artifacts_dir: str) -> dict:
-    path = Path(artifacts_dir) / "metadata.json"
+def _load_metadata_cached(path_str: str, _mtime_ns: int) -> dict:
+    path = Path(path_str)
     with path.open("r", encoding="utf-8") as file_obj:
         return json.load(file_obj)
+
+
+def _load_metadata(artifacts_dir: str) -> dict:
+    path = Path(artifacts_dir) / "metadata.json"
+    return _load_metadata_cached(str(path), _file_mtime_ns(path))
 
 
 def _resolve_model_type(metadata: dict) -> str:
@@ -283,15 +302,20 @@ def _resolve_model_type(metadata: dict) -> str:
 
 
 @lru_cache(maxsize=4)
-def _load_catboost_model(artifacts_dir: str) -> CatBoostRegressor:
+def _load_catboost_model_cached(model_path_str: str, _mtime_ns: int) -> CatBoostRegressor:
     model = CatBoostRegressor()
-    model.load_model(str(Path(artifacts_dir) / "ctr_model.cbm"))
+    model.load_model(model_path_str)
     return model
 
 
+def _load_catboost_model(artifacts_dir: str) -> CatBoostRegressor:
+    model_path = Path(artifacts_dir) / "ctr_model.cbm"
+    return _load_catboost_model_cached(str(model_path), _file_mtime_ns(model_path))
+
+
 @lru_cache(maxsize=4)
-def _load_deepfm_bundle(artifacts_dir: str) -> dict:
-    checkpoint = torch.load(Path(artifacts_dir) / "deepfm_model.pt", map_location="cpu")
+def _load_deepfm_bundle_cached(model_path_str: str, _mtime_ns: int) -> dict:
+    checkpoint = torch.load(Path(model_path_str), map_location="cpu")
     model = deepfm_pipeline.DeepFM(
         cat_cardinalities=checkpoint["cat_cardinalities"],
         dense_dim=len(checkpoint["dense_features"]),
@@ -302,6 +326,17 @@ def _load_deepfm_bundle(artifacts_dir: str) -> dict:
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
     return {"model": model, "checkpoint": checkpoint}
+
+
+def _load_deepfm_bundle(artifacts_dir: str) -> dict:
+    model_path = Path(artifacts_dir) / "deepfm_model.pt"
+    return _load_deepfm_bundle_cached(str(model_path), _file_mtime_ns(model_path))
+
+
+def reset_ranking_caches() -> None:
+    _load_metadata_cached.cache_clear()
+    _load_catboost_model_cached.cache_clear()
+    _load_deepfm_bundle_cached.cache_clear()
 
 
 def _predict_with_deepfm(candidates: pd.DataFrame, artifacts_dir: str) -> np.ndarray:

@@ -8,26 +8,13 @@ import pandas as pd
 import torch
 import torch.nn as nn
 
+from src.retrieval.datasets import resolve_dataset_path
 from src.retrieval.preprocessing import build_mappings
 from src.retrieval.twotower_minimal import TwoTower
 
 DEFAULT_EMBEDDING_DIM = 64
 DEFAULT_EPOCHS = 25
 DEFAULT_LR = 1e-2
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-
-
-def _resolve_dataset_path(artifact_dir: str | Path, filename: str) -> Path:
-    artifact_path = Path(artifact_dir)
-    candidates = [
-        artifact_path / filename,
-        PROJECT_ROOT / "src" / "retrieval" / filename,
-        PROJECT_ROOT / "data" / "db" / filename,
-    ]
-    for candidate in candidates:
-        if candidate.exists():
-            return candidate
-    raise FileNotFoundError(f"Could not locate {filename} in {artifact_path} or project datasets.")
 
 
 def _load_interactions_frame(interactions_csv: str | Path) -> pd.DataFrame:
@@ -71,8 +58,8 @@ def _train_runtime(artifact_dir: str) -> tuple[TwoTower, dict[str, int], dict[st
     except FileNotFoundError:
         pass
 
-    interactions_csv = _resolve_dataset_path(artifact_dir, "banner_interactions.csv")
-    banners_csv = _resolve_dataset_path(artifact_dir, "banners.csv")
+    interactions_csv = resolve_dataset_path("banner_interactions.csv", artifact_dir)
+    banners_csv = resolve_dataset_path("banners.csv", artifact_dir)
     interactions = _load_interactions_frame(interactions_csv)
     user2idx, item2idx, idx2item = build_mappings(interactions, str(banners_csv))
 
@@ -127,6 +114,10 @@ def load_retrieval_model(
     return model, user2idx, item2idx, idx2item, model.embedding_dim, device
 
 
+def reset_runtime_caches() -> None:
+    _train_runtime.cache_clear()
+
+
 def load_item_embeddings(
     artifact_dir: str,
     model: TwoTower,
@@ -153,7 +144,7 @@ def recommend_top_n(
     interactions_path = (
         Path(interactions_csv)
         if interactions_csv is not None
-        else _resolve_dataset_path(artifact_dir, "banner_interactions.csv")
+        else resolve_dataset_path("banner_interactions.csv", artifact_dir)
     )
     interactions = _load_interactions_frame(interactions_path)
 

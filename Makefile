@@ -1,17 +1,45 @@
 -include .env
 export
 
+PYTHON ?= .venv/bin/python
 export PROJECT_ROOT := $(shell pwd)
 API_BASE ?= http://127.0.0.1:8080
 JSON_FMT = if command -v jq >/dev/null 2>&1; then jq; else cat; fi
+INTERACTIONS_CSV ?= ./data/db/banner_interactions.csv
+USERS_CSV ?= ./data/db/users.csv
+BANNERS_CSV ?= ./data/db/banners.csv
+RETRIEVAL_ARTIFACTS_DIR ?= artifacts/pytorch_retrieval
+RANKER_ARTIFACTS_DIR ?= artifacts/pytorch_ranker
 
 
-deepfmrun:
-	python src/pipeline/deepfm/train_deepfm.py \
-	--interactions-csv ./data/db/banner_interactions.csv \
-	--users-csv ./data/db/users.csv \
-	--banners-csv ./data/db/banners.csv \
-	--output-dir deepfm_artifacts
+deepfmrun: ranker-train
+
+
+retrieval-train:
+	$(PYTHON) -m src.retrieval.twotower_minimal \
+		--data-path $(INTERACTIONS_CSV) \
+		--output-dir $(RETRIEVAL_ARTIFACTS_DIR)
+
+
+retrieval-refresh:
+	curl -sS -X POST $(API_BASE)/api/v1/retrieval/refresh | /bin/sh -c '$(JSON_FMT)'
+
+
+retrieval-reload:
+	curl -sS -X POST $(API_BASE)/api/v1/retrieval/reload | /bin/sh -c '$(JSON_FMT)'
+
+
+retrieval-train-reload:
+	$(MAKE) retrieval-train
+	$(MAKE) retrieval-reload
+
+
+ranker-train:
+	$(PYTHON) -m src.ranker.deepfm.train_deepfm \
+		--interactions-csv $(INTERACTIONS_CSV) \
+		--users-csv $(USERS_CSV) \
+		--banners-csv $(BANNERS_CSV) \
+		--output-dir $(RANKER_ARTIFACTS_DIR)
 
 
 infra-up:
@@ -32,10 +60,10 @@ smoke-retrieval:
 		-d '{"user_id":"u_00007","top_k":5}' | /bin/sh -c '$(JSON_FMT)'
 
 smoke-retrieval-refresh:
-	curl -sS -X POST $(API_BASE)/api/v1/retrieval/refresh | /bin/sh -c '$(JSON_FMT)'
+	$(MAKE) retrieval-refresh
 
 smoke-retrieval-reload:
-	curl -sS -X POST $(API_BASE)/api/v1/retrieval/reload | /bin/sh -c '$(JSON_FMT)'
+	$(MAKE) retrieval-reload
 
 smoke-retrieval-all:
 	$(MAKE) api-health

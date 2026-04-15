@@ -14,6 +14,14 @@ from sklearn.preprocessing import StandardScaler
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
 
+from src.ranker.artifacts import (
+    RANKER_MODEL_VERSION,
+    default_ranker_artifacts_path,
+    normalize_metadata_path,
+)
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+
 USER_COLS = [
     "user_id",
     "age",
@@ -233,7 +241,11 @@ def parse_args():
     parser.add_argument("--interactions-csv", required=True, default="./data/db/banner_interactions.csv")
     parser.add_argument("--users-csv", required=True, default="./data/db/users.csv")
     parser.add_argument("--banners-csv", required=True, default="./data/db/banners.csv")
-    parser.add_argument("--output-dir", required=True, default="deepfm_artifacts")
+    parser.add_argument(
+        "--output-dir",
+        required=True,
+        default=str(default_ranker_artifacts_path(PROJECT_ROOT)),
+    )
     parser.add_argument("--valid-days", type=int, default=14)
     parser.add_argument("--epochs", type=int, default=8)
     parser.add_argument("--batch-size", type=int, default=4096)
@@ -432,6 +444,52 @@ def predict_dataset(model: nn.Module, loader: DataLoader, device: torch.device) 
     return np.concatenate(preds, axis=0)
 
 
+def build_artifact_metadata(
+    *,
+    model_type: str,
+    global_ctr: float,
+    max_date: pd.Timestamp,
+    valid_days: int,
+    hidden_dims: List[int],
+    embedding_dim: int,
+    dropout: float,
+    history_specs: Dict[str, tuple[list[str], str, float]],
+    interactions_csv: str | Path,
+    users_csv: str | Path,
+    banners_csv: str | Path,
+    output_dir: str | Path,
+    training_config: dict,
+    project_root: Path | None = None,
+) -> dict:
+    return {
+        "model_version": RANKER_MODEL_VERSION,
+        "model_type": model_type,
+        "artifact_dir": normalize_metadata_path(output_dir, project_root=project_root),
+        "feature_cols": FEATURE_COLS,
+        "cat_features": CAT_FEATURES,
+        "dense_features": DENSE_FEATURES,
+        "global_ctr": float(global_ctr),
+        "latest_event_date": str(max_date.date()),
+        "valid_days": valid_days,
+        "hidden_dims": hidden_dims,
+        "embedding_dim": embedding_dim,
+        "dropout": dropout,
+        "history_specs": {
+            name: {"group_cols": group_cols, "feature_name": feature_name, "alpha": alpha}
+            for name, (group_cols, feature_name, alpha) in history_specs.items()
+        },
+        "user_cols": USER_COLS,
+        "banner_cols": BANNER_COLS,
+        "default_score_mode": "ctr",
+        "training_data": {
+            "interactions_csv": normalize_metadata_path(interactions_csv, project_root=project_root),
+            "users_csv": normalize_metadata_path(users_csv, project_root=project_root),
+            "banners_csv": normalize_metadata_path(banners_csv, project_root=project_root),
+        },
+        "training_config": training_config,
+    }
+
+
 def main():
     args = parse_args()
     set_seed(args.random_seed)
@@ -583,25 +641,37 @@ def main():
     for table_name, table_df in history_tables.items():
         table_df.to_csv(output_dir / f"{table_name}_history.csv.gz", index=False, compression="gzip")
 
-    metadata = {
-        "model_type": "deepfm",
-        "feature_cols": FEATURE_COLS,
-        "cat_features": CAT_FEATURES,
-        "dense_features": DENSE_FEATURES,
-        "global_ctr": float(global_ctr),
-        "latest_event_date": str(max_date.date()),
-        "valid_days": args.valid_days,
-        "hidden_dims": hidden_dims,
-        "embedding_dim": args.emb_dim,
-        "dropout": args.dropout,
-        "history_specs": {
-            name: {"group_cols": group_cols, "feature_name": feature_name, "alpha": alpha}
-            for name, (group_cols, feature_name, alpha) in history_specs.items()
+    metadata = build_artifact_metadata(
+        model_type="deepfm",
+        global_ctr=global_ctr,
+        max_date=max_date,
+        valid_days=args.valid_days,
+        hidden_dims=hidden_dims,
+        embedding_dim=args.emb_dim,
+        dropout=args.dropout,
+        history_specs=history_specs,
+        interactions_csv=args.interactions_csv,
+        users_csv=args.users_csv,
+        banners_csv=args.banners_csv,
+        output_dir=output_dir,
+        training_config={
+            "epochs_requested": args.epochs,
+            "epochs_completed": epoch,
+            "batch_size": args.batch_size,
+            "learning_rate": args.learning_rate,
+            "weight_decay": args.weight_decay,
+            "dropout": args.dropout,
+            "hidden_dims": hidden_dims,
+            "embedding_dim": args.emb_dim,
+            "patience": args.patience,
+            "random_seed": args.random_seed,
+            "device": str(device),
+            "train_rows": int(len(train_df)),
+            "valid_rows": int(len(valid_df)),
+            "best_epoch": int(best_epoch),
         },
-        "user_cols": USER_COLS,
-        "banner_cols": BANNER_COLS,
-        "default_score_mode": "ctr",
-    }
+        project_root=PROJECT_ROOT,
+    )
     with open(output_dir / "metadata.json", "w", encoding="utf-8") as f:
         json.dump(metadata, f, ensure_ascii=False, indent=2)
     with open(output_dir / "metrics.json", "w", encoding="utf-8") as f:

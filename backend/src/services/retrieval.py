@@ -27,6 +27,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 from src.retrieval.inference import (
     load_item_embeddings,
     load_retrieval_model,
+    reset_runtime_caches,
 )
 
 DEFAULT_INTERACTIONS = "data/db/banner_interactions.csv"
@@ -35,6 +36,7 @@ DEFAULT_RETRIEVAL_ARTIFACTS = "artifacts/pytorch_retrieval"
 REDIS_ACTIVE_BANNERS_KEY = "retrieval:active_banners"
 REDIS_POPULAR_BANNERS_KEY = "retrieval:popular_banners"
 REDIS_SEEN_HASH_KEY = "retrieval:seen_banners"
+REDIS_LIVE_SEEN_HASH_KEY = "retrieval:live_seen_banners"
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +46,20 @@ def _resolve_path(project_root: Path, raw_path: str | None, fallback: str) -> Pa
     if not path.is_absolute():
         path = project_root / path
     return path
+
+
+def _clear_state_caches() -> None:
+    _load_active_banner_ids.cache_clear()
+    _load_popular_banner_scores.cache_clear()
+    _load_seen_banner_history.cache_clear()
+
+
+def _merge_seen_histories(*histories: dict[str, set[str]]) -> dict[str, set[str]]:
+    merged: dict[str, set[str]] = {}
+    for history in histories:
+        for user_id, banner_ids in history.items():
+            merged.setdefault(str(user_id), set()).update(str(banner_id) for banner_id in banner_ids)
+    return merged
 
 
 @dataclass(frozen=True)
@@ -180,6 +196,7 @@ class RetrievalService:
             DEFAULT_INTERACTIONS,
         )
         self.state: RetrievalState | None = None
+        self.live_seen_banner_history: dict[str, set[str]] = {}
         self.redis_client = self._build_redis_client()
 
     def _build_redis_client(self) -> Redis | None:
@@ -227,6 +244,16 @@ class RetrievalService:
                         for user_id, banner_ids in state.seen_banner_history.items()
                     },
                 )
+
+            pipeline.delete(REDIS_LIVE_SEEN_HASH_KEY)
+            if self.live_seen_banner_history:
+                pipeline.hset(
+                    REDIS_LIVE_SEEN_HASH_KEY,
+                    mapping={
+                        user_id: json.dumps(sorted(banner_ids))
+                        for user_id, banner_ids in self.live_seen_banner_history.items()
+                    },
+                )
             pipeline.execute()
         except RedisError as exc:
             logger.warning("retrieval redis state write failed error=%s", exc)
@@ -272,6 +299,36 @@ class RetrievalService:
             logger.warning("retrieval redis seen read failed user_id=%s error=%s", user_id, exc)
             return None
 
+    def _read_seen_banner_history_hash_from_redis(
+        self,
+        redis_key: str,
+        log_label: str,
+    ) -> dict[str, set[str]] | None:
+        if not self._redis_available():
+            return None
+        assert self.redis_client is not None
+        try:
+            raw_mapping = self.redis_client.hgetall(redis_key)
+            return {
+                str(user_id): {str(banner_id) for banner_id in json.loads(raw_banner_ids)}
+                for user_id, raw_banner_ids in raw_mapping.items()
+            }
+        except (RedisError, json.JSONDecodeError) as exc:
+            logger.warning("retrieval redis %s read failed error=%s", log_label, exc)
+            return None
+
+    def _read_seen_banner_history_from_redis(self) -> dict[str, set[str]] | None:
+        return self._read_seen_banner_history_hash_from_redis(
+            REDIS_SEEN_HASH_KEY,
+            "seen history",
+        )
+
+    def _read_live_seen_banner_history_from_redis(self) -> dict[str, set[str]] | None:
+        return self._read_seen_banner_history_hash_from_redis(
+            REDIS_LIVE_SEEN_HASH_KEY,
+            "live seen history",
+        )
+
     def _write_seen_banner_ids_to_redis(self, user_id: str, banner_ids: set[str]) -> None:
         if not self._redis_available():
             return
@@ -285,10 +342,23 @@ class RetrievalService:
         except RedisError as exc:
             logger.warning("retrieval redis seen write failed user_id=%s error=%s", user_id, exc)
 
+    def _write_live_seen_banner_ids_to_redis(self, user_id: str, banner_ids: set[str]) -> None:
+        if not self._redis_available():
+            return
+        assert self.redis_client is not None
+        try:
+            self.redis_client.hset(
+                REDIS_LIVE_SEEN_HASH_KEY,
+                user_id,
+                json.dumps(sorted(banner_ids)),
+            )
+        except RedisError as exc:
+            logger.warning("retrieval redis live seen write failed user_id=%s error=%s", user_id, exc)
+
     def load(self) -> None:
         started_at = perf_counter()
         runtime = self._get_runtime(None)
-        self.refresh_state()
+        self.refresh_state(force=True)
         logger.info(
             "retrieval runtime loaded model_version=%s artifact_dir=%s num_users=%s num_items=%s load_ms=%.2f",
             runtime.model_version,
@@ -298,7 +368,10 @@ class RetrievalService:
             (perf_counter() - started_at) * 1000,
         )
 
-    def refresh_state(self) -> RetrievalState:
+    def refresh_state(self, force: bool = False) -> RetrievalState:
+        if force:
+            _clear_state_caches()
+
         active_banner_ids: set[str] = set()
         popular_banner_scores: list[tuple[str, float]] = []
         seen_banner_history: dict[str, set[str]] = {}
@@ -308,6 +381,18 @@ class RetrievalService:
         if self.default_interactions_csv.exists():
             popular_banner_scores = _load_popular_banner_scores(str(self.default_interactions_csv))
             seen_banner_history = _load_seen_banner_history(str(self.default_interactions_csv))
+
+        redis_live_seen_banner_history = self._read_live_seen_banner_history_from_redis()
+        if redis_live_seen_banner_history is not None:
+            self.live_seen_banner_history = _merge_seen_histories(
+                redis_live_seen_banner_history,
+                self.live_seen_banner_history,
+            )
+
+        seen_banner_history = _merge_seen_histories(
+            seen_banner_history,
+            self.live_seen_banner_history,
+        )
 
         self.state = RetrievalState(
             active_banner_ids=active_banner_ids,
@@ -337,7 +422,11 @@ class RetrievalService:
         current_seen = set(state.seen_banner_history.get(user_id, set()))
         current_seen.update(str(banner_id) for banner_id in banner_ids)
         state.seen_banner_history[user_id] = current_seen
+        current_live_seen = set(self.live_seen_banner_history.get(user_id, set()))
+        current_live_seen.update(str(banner_id) for banner_id in banner_ids)
+        self.live_seen_banner_history[user_id] = current_live_seen
         self._write_seen_banner_ids_to_redis(user_id, current_seen)
+        self._write_live_seen_banner_ids_to_redis(user_id, current_live_seen)
         logger.info(
             "retrieval seen updated user_id=%s added_count=%s total_seen_count=%s redis_enabled=%s",
             user_id,
@@ -522,7 +611,7 @@ class RetrievalService:
     def refresh(self) -> RetrievalRefreshResponse:
         started_at = perf_counter()
         runtime = self._get_runtime(None)
-        state = self.refresh_state()
+        state = self.refresh_state(force=True)
         logger.info(
             "retrieval refresh completed model_version=%s active_banner_count=%s popular_banner_count=%s seen_user_count=%s latency_ms=%.2f",
             runtime.model_version,
@@ -540,9 +629,11 @@ class RetrievalService:
 
     def reload(self) -> RetrievalReloadResponse:
         started_at = perf_counter()
+        reset_runtime_caches()
         _load_runtime.cache_clear()
+        _clear_state_caches()
         runtime = self._get_runtime(None)
-        state = self.refresh_state()
+        state = self.refresh_state(force=False)
         logger.info(
             "retrieval reload completed model_version=%s num_users=%s num_items=%s embedding_dim=%s active_banner_count=%s popular_banner_count=%s seen_user_count=%s latency_ms=%.2f",
             runtime.model_version,

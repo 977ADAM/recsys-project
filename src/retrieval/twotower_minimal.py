@@ -7,17 +7,27 @@ from rich.console import Console
 import torch
 import torch.nn as nn
 
+from src.retrieval.datasets import DEFAULT_INTERACTIONS_CSV
 try:
     from src.retrieval.data_loader import load_data
 except ImportError:
     from data_loader import load_data
 
 
-DATA_PATH = Path(__file__).with_name("banner_interactions.csv")
+DATA_PATH = DEFAULT_INTERACTIONS_CSV
 ARTIFACTS_DIR = Path(__file__).resolve().parents[2] / "artifacts" / "pytorch_retrieval"
 TRAIN_END = pd.Timestamp("2026-02-28")
 VALID_END = pd.Timestamp("2026-03-15")
 console = Console()
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _normalize_metadata_path(path: str | Path) -> str:
+    resolved_path = Path(path).resolve()
+    try:
+        return str(resolved_path.relative_to(PROJECT_ROOT.resolve()))
+    except ValueError:
+        return str(resolved_path)
 
 
 class TwoTower(nn.Module):
@@ -106,6 +116,7 @@ def save_artifacts(output_dir: Path, model: TwoTower, data: dict, metrics: dict,
             {
                 "model_version": "pytorch_retrieval",
                 "model_type": "two_tower",
+                "artifact_dir": _normalize_metadata_path(output_dir),
                 "embedding_dim": model.embedding_dim,
                 "train_end": config["train_end"],
                 "valid_end": config["valid_end"],
@@ -114,6 +125,16 @@ def save_artifacts(output_dir: Path, model: TwoTower, data: dict, metrics: dict,
                 "valid_rows": data["valid_rows"],
                 "test_rows": data["test_rows"],
                 "validation_metrics": metrics,
+                "training_data": {
+                    "interactions_csv": _normalize_metadata_path(config["data_path"]),
+                },
+                "training_config": {
+                    "embedding_dim": config["emb_dim"],
+                    "epochs": config["epochs"],
+                    "learning_rate": config["lr"],
+                    "random_seed": config["seed"],
+                    "recall_k": config["recall_k"],
+                },
             },
             file_obj,
             ensure_ascii=False,
@@ -191,6 +212,12 @@ def main():
         {
             "train_end": str(train_end.date()),
             "valid_end": str(valid_end.date()),
+            "data_path": data_path,
+            "emb_dim": args.emb_dim,
+            "epochs": args.epochs,
+            "lr": args.lr,
+            "seed": args.seed,
+            "recall_k": args.recall_k,
             "latest_event_date": (
                 str(data["test_df"]["event_date"].max().date())
                 if not data["test_df"].empty
