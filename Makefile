@@ -6,12 +6,6 @@ API_BASE ?= http://127.0.0.1:8080
 JSON_FMT = if command -v jq >/dev/null 2>&1; then jq; else cat; fi
 
 
-up:
-	./.venv/bin/python main.py train-ranker \
-		--output-dir ctr_artifacts \
-		--iterations 500 \
-		--valid-days 14
-
 deepfmrun:
 	python src/pipeline/deepfm/train_deepfm.py \
 	--interactions-csv ./data/db/banner_interactions.csv \
