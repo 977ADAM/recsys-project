@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Callable
 
 import pandas as pd
 from rich.console import Console
@@ -21,11 +20,9 @@ from src.retrieval.pipeline.registry import (
 )
 
 DEFAULT_EMBEDDING_DIM = 64
-DEFAULT_TRAIN_EPOCHS = 100
-DEFAULT_RUNTIME_EPOCHS = 25
+DEFAULT_TRAIN_EPOCHS = 20
+DEFAULT_RUNTIME_EPOCHS = 10
 DEFAULT_LR = 0.01
-DEFAULT_TOWER_HIDDEN_DIMS = (128, 64)
-DEFAULT_TOWER_DROPOUT = 0.1
 
 console = Console()
 
@@ -47,9 +44,7 @@ def train_model(
     lr: float,
     batch_size: int = 2048,
     shuffle: bool = True,
-    weight_decay: float = 1e-5,
-    epoch_callback: Callable[[TwoTower, int, float], bool | None] | None = None,
-) -> None:
+) -> list[float]:
     if users.numel() == 0:
         raise ValueError("Training split is empty after encoding.")
 
@@ -67,9 +62,9 @@ def train_model(
     optimizer = torch.optim.Adam(
         model.parameters(),
         lr=lr,
-        weight_decay=weight_decay,
     )
     loss_fn = nn.BCEWithLogitsLoss()
+    epoch_losses: list[float] = []
 
     for epoch in range(epochs):
         model.train()
@@ -90,11 +85,9 @@ def train_model(
             total_examples += batch_size_actual
 
         epoch_loss = total_loss / total_examples if total_examples > 0 else 0.0
+        epoch_losses.append(epoch_loss)
 
-        if epoch_callback is not None:
-            should_stop = epoch_callback(model, epoch + 1, epoch_loss)
-            if should_stop:
-                break
+    return epoch_losses
 
 
 def train_two_tower_model(
@@ -106,11 +99,6 @@ def train_two_tower_model(
     seed: int = 42,
     recall_k: int = 100,
     batch_size: int = 2048,
-    weight_decay: float = 1e-5,
-    patience: int = 5,
-    min_delta: float = 1e-4,
-    tower_hidden_dims: tuple[int, ...] = DEFAULT_TOWER_HIDDEN_DIMS,
-    tower_dropout: float = DEFAULT_TOWER_DROPOUT,
     progress_console: Console | None = None,
 ) -> tuple[TwoTower, dict[str, float]]:
     validate_training_data(data)
@@ -120,51 +108,8 @@ def train_two_tower_model(
         n_users=data.n_users,
         n_banners=data.n_banners,
         emb_dim=emb_dim,
-        hidden_dims=tower_hidden_dims,
-        dropout=tower_dropout,
     )
-    best_state = None
-    best_recall = float("-inf")
-    best_epoch = 0
-    epochs_without_improvement = 0
-
-    def on_epoch(current_model: TwoTower, epoch: int, loss_value: float) -> None:
-        nonlocal best_state, best_recall, best_epoch, epochs_without_improvement
-
-        current_model.eval()
-        with torch.no_grad():
-            recall = recall_at_k(current_model, data.valid.positive_pairs, k=recall_k)
-
-        improved = recall > (best_recall + min_delta)
-
-        if improved:
-            best_recall = recall
-            best_epoch = epoch
-            epochs_without_improvement = 0
-            best_state = {
-                key: value.detach().cpu().clone()
-                for key, value in current_model.state_dict().items()
-            }
-        else:
-            epochs_without_improvement += 1
-
-        if progress_console is not None:
-            progress_console.print(
-                f"epoch={epoch} train_loss={loss_value:.4f} valid_recall@{recall_k}={recall:.4f} best_recall@{recall_k}={best_recall:.4f} no_improve={epochs_without_improvement}/{patience}"
-            )
-
-        if epochs_without_improvement >= patience:
-            if progress_console is not None:
-                progress_console.print(
-                    f"early_stopping_triggered epoch={epoch} "
-                    f"best_epoch={best_epoch} "
-                    f"best_valid_recall@{recall_k}={best_recall:.4f}"
-                )
-            return True
-        
-        return False
-
-    train_model(
+    epoch_losses = train_model(
         model,
         data.train.users,
         data.train.banners,
@@ -172,18 +117,16 @@ def train_two_tower_model(
         epochs=epochs,
         lr=lr,
         batch_size=batch_size,
-        weight_decay=weight_decay,
-        epoch_callback=on_epoch,
     )
-
-    if best_state is None:
-        raise RuntimeError("Training completed without a best checkpoint.")
-
-    model.load_state_dict(best_state)
     model.eval()
 
     metrics = evaluate_recalls(model, data.valid.positive_pairs, ks=[20, 50, recall_k])
-    metrics["best_epoch"] = best_epoch
+    metrics["final_epoch"] = epochs
+    metrics["train_loss"] = round(epoch_losses[-1], 6) if epoch_losses else 0.0
+    if progress_console is not None:
+        progress_console.print(
+            f"train_loss={metrics['train_loss']:.4f} valid_recall@{recall_k}={metrics[f'recall@{recall_k}']:.4f}"
+        )
     return model, metrics
 
 def main() -> None:
@@ -208,9 +151,6 @@ def main() -> None:
         seed=args.seed,
         recall_k=args.recall_k,
         batch_size=args.batch_size,
-        weight_decay=args.weight_decay,
-        patience=args.patience,
-        min_delta=args.min_delta,
         progress_console=console,
     )
 
@@ -232,7 +172,7 @@ def main() -> None:
     )
     console.print(json.dumps(metrics, ensure_ascii=False, indent=2))
     console.print(
-        f"best_valid_recall@{args.recall_k}={metrics[f'recall@{args.recall_k}']:.4f} "
-        f"epoch={int(metrics['best_epoch'])}"
+        f"valid_recall@{args.recall_k}={metrics[f'recall@{args.recall_k}']:.4f} "
+        f"epoch={int(metrics['final_epoch'])}"
     )
     console.print(f"saved_artifacts={output_dir}")

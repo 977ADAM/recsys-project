@@ -26,8 +26,6 @@ def save_artifacts(
         {
             "model_state_dict": model.state_dict(),
             "embedding_dim": model.embedding_dim,
-            "tower_hidden_dims": list(model.hidden_dims),
-            "tower_dropout": model.dropout,
             "n_users": data.n_users,
             "n_banners": data.n_banners,
         },
@@ -53,8 +51,6 @@ def save_artifacts(
                 "model_type": "two_tower",
                 "artifact_dir": normalize_project_path(output_dir, PROJECT_ROOT),
                 "embedding_dim": model.embedding_dim,
-                "tower_hidden_dims": list(model.hidden_dims),
-                "tower_dropout": model.dropout,
                 "train_end": config["train_end"],
                 "valid_end": config["valid_end"],
                 "latest_event_date": data.latest_event_date,
@@ -67,8 +63,6 @@ def save_artifacts(
                 },
                 "training_config": {
                     "embedding_dim": config["emb_dim"],
-                    "tower_hidden_dims": list(model.hidden_dims),
-                    "tower_dropout": model.dropout,
                     "epochs": config["epochs"],
                     "learning_rate": config["lr"],
                     "random_seed": config["seed"],
@@ -102,11 +96,8 @@ def load_saved_runtime(
         n_users=int(checkpoint["n_users"]),
         n_banners=int(checkpoint["n_banners"]),
         emb_dim=int(checkpoint["embedding_dim"]),
-        hidden_dims=tuple(checkpoint.get("tower_hidden_dims", ())),
-        dropout=float(checkpoint.get("tower_dropout", 0.0)),
     )
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
     return model, user2idx, item2idx, idx2item
-
 

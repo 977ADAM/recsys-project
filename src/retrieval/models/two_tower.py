@@ -10,50 +10,25 @@ class TwoTower(nn.Module):
         n_users: int,
         n_banners: int,
         emb_dim: int = 64,
-        hidden_dims: tuple[int, ...] | list[int] = (),
-        dropout: float = 0.0,
     ) -> None:
         super().__init__()
         self.user_tower = nn.Embedding(n_users, emb_dim)
         self.banner_tower = nn.Embedding(n_banners, emb_dim)
         self.embedding_dim = emb_dim
-        self.hidden_dims = tuple(hidden_dims)
-        self.dropout = float(dropout)
-        self.user_mlp = self._build_tower_mlp(emb_dim, self.hidden_dims, self.dropout)
-        self.banner_mlp = self._build_tower_mlp(emb_dim, self.hidden_dims, self.dropout)
-
-    @staticmethod
-    def _build_tower_mlp(
-        input_dim: int,
-        hidden_dims: tuple[int, ...],
-        dropout: float,
-    ) -> nn.Module:
-        if not hidden_dims:
-            return nn.Identity()
-
-        layers: list[nn.Module] = []
-        current_dim = input_dim
-        for hidden_dim in hidden_dims:
-            layers.append(nn.Linear(current_dim, hidden_dim))
-            layers.append(nn.ReLU())
-            if dropout > 0:
-                layers.append(nn.Dropout(dropout))
-            current_dim = hidden_dim
-
-        layers.append(nn.Linear(current_dim, input_dim))
-        return nn.Sequential(*layers)
+        self.hidden_dims: tuple[int, ...] = ()
+        self.dropout = 0.0
 
     def encode_user(self, user_ids):
-        return self.user_mlp(self.user_tower(user_ids))
+        return self.user_tower(user_ids)
 
     def encode_banner(self, banner_ids):
-        return self.banner_mlp(self.banner_tower(banner_ids))
+        return self.banner_tower(banner_ids)
 
     def encode_all_users(self) -> torch.Tensor:
-        return self.user_mlp(self.user_tower.weight)
+        return self.user_tower.weight
 
     def encode_all_banners(self) -> torch.Tensor:
-        return self.banner_mlp(self.banner_tower.weight)
+        return self.banner_tower.weight
 
     def score_all_banners(self):
         return self.encode_all_users() @ self.encode_all_banners().T

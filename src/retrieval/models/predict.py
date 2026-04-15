@@ -7,6 +7,7 @@ import torch
 
 from src.retrieval.data.ingest import load_interactions_frame, resolve_dataset_path
 from src.retrieval.data.preprocess import (
+    build_binary_interactions,
     build_mappings,
     encode_frame,
     filter_known_entities,
@@ -16,8 +17,6 @@ from src.retrieval.models.train import (
     DEFAULT_EMBEDDING_DIM,
     DEFAULT_LR,
     DEFAULT_RUNTIME_EPOCHS,
-    DEFAULT_TOWER_DROPOUT,
-    DEFAULT_TOWER_HIDDEN_DIMS,
     train_model,
 )
 from src.retrieval.models.two_tower import TwoTower
@@ -35,7 +34,7 @@ def _train_runtime(artifact_dir: str) -> tuple[TwoTower, dict[str, int], dict[st
     interactions = load_interactions_frame(interactions_csv, require_event_date=False)
     user2idx, item2idx, idx2item = build_mappings(interactions, str(banners_csv))
 
-    filtered = filter_known_entities(interactions, user2idx, item2idx)
+    filtered = build_binary_interactions(filter_known_entities(interactions, user2idx, item2idx))
     user_ids, banner_ids, labels = encode_frame(filtered, user2idx, item2idx)
     if user_ids.numel() == 0:
         raise ValueError("Retrieval training dataset is empty after applying user/banner mappings.")
@@ -45,8 +44,6 @@ def _train_runtime(artifact_dir: str) -> tuple[TwoTower, dict[str, int], dict[st
         n_users=len(user2idx),
         n_banners=len(item2idx),
         emb_dim=DEFAULT_EMBEDDING_DIM,
-        hidden_dims=DEFAULT_TOWER_HIDDEN_DIMS,
-        dropout=DEFAULT_TOWER_DROPOUT,
     )
     train_model(
         model,
@@ -135,4 +132,3 @@ def recommend_top_n(
         k = min(top_n, scores.numel())
         top_indices = torch.topk(scores, k=k).indices.cpu().tolist()
     return [idx2item[item_idx] for item_idx in top_indices if item_idx in idx2item]
-

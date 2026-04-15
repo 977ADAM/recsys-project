@@ -37,6 +37,19 @@ def filter_known_entities(
     ].copy()
 
 
+def build_binary_interactions(frame: pd.DataFrame) -> pd.DataFrame:
+    if frame.empty:
+        binary_frame = frame.copy()
+        binary_frame["label"] = pd.Series(dtype="float32")
+        return binary_frame
+
+    positive_mask = frame["clicks"] > 0
+    negative_mask = (frame["impressions"] > 0) & (frame["clicks"] == 0)
+    binary_frame = frame.loc[positive_mask | negative_mask].copy()
+    binary_frame["label"] = positive_mask.loc[binary_frame.index].astype("float32")
+    return binary_frame
+
+
 def encode_frame(
     frame: pd.DataFrame,
     user2idx: dict[str, int],
