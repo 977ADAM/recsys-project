@@ -23,6 +23,3 @@ class TwoTower(nn.Module):
         user_vec = self.encode_user(user_ids)
         banner_vec = self.encode_banner(banner_ids)
         return (user_vec * banner_vec).sum(dim=1)
-
-
-__all__ = ["TwoTower"]

@@ -31,6 +31,3 @@ def load_data(
         banners_path=Path(banners_csv) if banners_csv is not None else None,
     )
     return prepare_training_data(config).as_dict()
-
-
-__all__ = ["prepare_training_data", "load_data"]

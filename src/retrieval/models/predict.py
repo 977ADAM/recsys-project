@@ -133,9 +133,3 @@ def recommend_top_n(
     return [idx2item[item_idx] for item_idx in top_indices if item_idx in idx2item]
 
 
-__all__ = [
-    "load_retrieval_model",
-    "reset_runtime_caches",
-    "load_item_embeddings",
-    "recommend_top_n",
-]

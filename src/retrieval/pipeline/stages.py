@@ -61,10 +61,3 @@ def run_preprocess_stage(
         valid=_encode_split(splits.valid, user2idx, item2idx),
         test=_encode_split(splits.test, user2idx, item2idx),
     )
-
-
-__all__ = [
-    "run_ingest_stage",
-    "run_split_stage",
-    "run_preprocess_stage",
-]

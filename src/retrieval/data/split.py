@@ -32,6 +32,3 @@ def split_interactions_by_time(
         valid=valid_df,
         test=test_df,
     )
-
-
-__all__ = ["RetrievalDataSplits", "split_interactions_by_time"]

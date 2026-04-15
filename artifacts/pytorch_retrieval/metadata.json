@@ -10,10 +10,10 @@
   "valid_rows": 24835,
   "test_rows": 26794,
   "validation_metrics": {
-    "recall@20": 0.070157,
-    "recall@50": 0.162902,
-    "recall@100": 0.359001,
-    "best_epoch": 73
+    "recall@20": 0.065708,
+    "recall@50": 0.171116,
+    "recall@100": 0.358316,
+    "best_epoch": 97
   },
   "training_data": {
     "interactions_csv": "data/db/banner_interactions.csv"

@@ -22,6 +22,3 @@ def recall_at_k(model: Any, positive_pairs: pd.DataFrame, k: int = 100) -> float
 
 def evaluate_recalls(model: Any, positive_pairs: pd.DataFrame, ks: list[int]) -> dict[str, float]:
     return {f"recall@{k}": round(recall_at_k(model, positive_pairs, k=k), 6) for k in ks}
-
-
-__all__ = ["recall_at_k", "evaluate_recalls"]

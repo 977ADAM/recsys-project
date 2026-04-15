@@ -8,16 +8,14 @@ import pandas as pd
 from rich.console import Console
 import torch
 import torch.nn as nn
+from torch.utils.data import DataLoader, TensorDataset
 
-from src.retrieval.data.ingest import DEFAULT_INTERACTIONS_CSV
+from src.retrieval.utils.args import parse_args
 from src.retrieval.models.evaluate import evaluate_recalls, recall_at_k
 from src.retrieval.models.export import save_artifacts
 from src.retrieval.models.two_tower import TwoTower
 from src.retrieval.pipeline.orchestrator import prepare_training_data
 from src.retrieval.pipeline.registry import (
-    DEFAULT_ARTIFACTS_DIR,
-    DEFAULT_TRAIN_END,
-    DEFAULT_VALID_END,
     PreparedRetrievalData,
     RetrievalDataConfig,
 )
@@ -25,7 +23,7 @@ from src.retrieval.pipeline.registry import (
 DEFAULT_EMBEDDING_DIM = 64
 DEFAULT_TRAIN_EPOCHS = 100
 DEFAULT_RUNTIME_EPOCHS = 25
-DEFAULT_LR = 1e-2
+DEFAULT_LR = 0.01
 
 console = Console()
 
@@ -45,25 +43,59 @@ def train_model(
     *,
     epochs: int,
     lr: float,
+    batch_size: int = 2048,
+    shuffle: bool = True,
+    weight_decay: float = 1e-5,
     epoch_callback=None,
 ) -> None:
+    
+
+
     if users.numel() == 0:
         raise ValueError("Training split is empty after encoding.")
+    
+    if not (len(users) == len(banners) == len(labels)):
+        raise ValueError("Users, banners, and labels must have the same length.")
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+
+
+    dataset = TensorDataset(users, banners, labels)
+    loader = DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        drop_last=False,
+    )
+
+    optimizer = torch.optim.Adam(
+        model.parameters(),
+        lr=lr,
+        weight_decay=weight_decay,
+    )
     loss_fn = nn.BCEWithLogitsLoss()
 
     for epoch in range(epochs):
         model.train()
-        logits = model(users, banners)
-        loss = loss_fn(logits, labels)
 
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+        total_loss = 0.0
+        total_examples = 0
+
+        for batch_users, batch_banners, batch_labels in loader:
+            logits = model(batch_users, batch_banners)
+            loss = loss_fn(logits, batch_labels)
+
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+            batch_size_actual = batch_users.size(0)
+            total_loss += float(loss.item()) * batch_size_actual
+            total_examples += batch_size_actual
+
+        epoch_loss = total_loss / total_examples if total_examples > 0 else 0.0
 
         if epoch_callback is not None:
-            epoch_callback(model, epoch + 1, float(loss.item()))
+            epoch_callback(model, epoch + 1, epoch_loss)
 
 
 def train_two_tower_model(
@@ -74,8 +106,11 @@ def train_two_tower_model(
     lr: float = DEFAULT_LR,
     seed: int = 42,
     recall_k: int = 100,
+    batch_size: int = 2048,
     progress_console: Console | None = None,
 ) -> tuple[TwoTower, dict[str, float]]:
+    
+    
     validate_training_data(data)
     torch.manual_seed(seed)
 
@@ -114,6 +149,7 @@ def train_two_tower_model(
         data.train.labels,
         epochs=epochs,
         lr=lr,
+        batch_size=batch_size,
         epoch_callback=on_epoch,
     )
 
@@ -126,21 +162,6 @@ def train_two_tower_model(
     metrics = evaluate_recalls(model, data.valid.positive_pairs, ks=[20, 50, recall_k])
     metrics["best_epoch"] = best_epoch
     return model, metrics
-
-
-def parse_args():
-    parser = argparse.ArgumentParser(description="Train a minimal TwoTower retrieval model.")
-    parser.add_argument("--data-path", default=str(DEFAULT_INTERACTIONS_CSV))
-    parser.add_argument("--output-dir", default=str(DEFAULT_ARTIFACTS_DIR))
-    parser.add_argument("--train-end", default=str(DEFAULT_TRAIN_END.date()))
-    parser.add_argument("--valid-end", default=str(DEFAULT_VALID_END.date()))
-    parser.add_argument("--emb-dim", type=int, default=DEFAULT_EMBEDDING_DIM)
-    parser.add_argument("--epochs", type=int, default=DEFAULT_TRAIN_EPOCHS)
-    parser.add_argument("--lr", type=float, default=DEFAULT_LR)
-    parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--recall-k", type=int, default=100)
-    return parser.parse_args()
-
 
 def main() -> None:
     args = parse_args()
@@ -163,6 +184,7 @@ def main() -> None:
         lr=args.lr,
         seed=args.seed,
         recall_k=args.recall_k,
+        batch_size=getattr(args, "batch_size", 512),
         progress_console=console,
     )
 
@@ -188,15 +210,3 @@ def main() -> None:
         f"epoch={int(metrics['best_epoch'])}"
     )
     console.print(f"saved_artifacts={output_dir}")
-
-
-__all__ = [
-    "DEFAULT_EMBEDDING_DIM",
-    "DEFAULT_TRAIN_EPOCHS",
-    "DEFAULT_RUNTIME_EPOCHS",
-    "DEFAULT_LR",
-    "validate_training_data",
-    "train_model",
-    "train_two_tower_model",
-    "main",
-]

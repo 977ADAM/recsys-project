@@ -79,5 +79,3 @@ def build_fallback_candidates(
             break
     return items
 
-
-__all__ = ["search_top_k", "build_fallback_candidates"]
