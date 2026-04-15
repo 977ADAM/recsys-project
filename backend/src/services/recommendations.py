@@ -30,7 +30,7 @@ from src.ranker.inference import (
     load_history_tables,
     merge_history_features,
 )
-from src.ranker.deepfm import train_deepfm as deepfm_pipeline
+from ranker import train_deepfm as deepfm_pipeline
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
