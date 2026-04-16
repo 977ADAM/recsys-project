@@ -3,8 +3,8 @@ from pathlib import Path
 
 import torch
 
-from data import EncodedTable
-from model import TwoTowerModel
+from src.data import EncodedTable
+from src.model import TwoTowerModel
 
 
 def save_checkpoint(

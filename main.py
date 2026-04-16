@@ -3,10 +3,10 @@ import numpy as np
 import pandas as pd
 import torch
 
-from data import RecSysDataModule
-from checkpoint import save_checkpoint
-from model import init_model
-from config import parse_args
+from src.data import RecSysDataModule
+from src.checkpoint import save_checkpoint
+from src.model import init_model
+from src.config import parse_args
 
 def set_seed(seed: int) -> None:
     random.seed(seed)

@@ -7,13 +7,13 @@ import torch
 
 from torch.utils.data import Dataset, DataLoader
 
-from features import (
+from src.features import (
     ITEM_CATEGORICAL_COLUMNS,
     ITEM_NUMERIC_COLUMNS,
     USER_CATEGORICAL_COLUMNS,
     USER_NUMERIC_COLUMNS,
 )
-from encoding import encode_table, EncodedTable
+from src.encoding import encode_table, EncodedTable
 
 @dataclass
 class PairTensors:
