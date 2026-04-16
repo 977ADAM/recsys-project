@@ -1,6 +1,5 @@
 import random
 import numpy as np
-import pandas as pd
 import torch
 
 from src.data import RecSysDataModule
@@ -23,13 +22,13 @@ def main() -> None:
 
     data = RecSysDataModule(args).setup()
     print(
-    "Loaded data:",
-    f"users={len(data.user_table.ids)}",
-    f"items={len(data.item_table.ids)}",
-    f"train_pairs={len(data.train_pairs)}",
-    f"valid_pairs={len(data.valid_pairs)}",
-    f"test_pairs={len(data.test_pairs)}",
-    f"device={device.type}",
+        "Loaded data:",
+        f"users={data.num_users}",
+        f"items={data.num_items}",
+        f"train_pairs={data.num_train_pairs}",
+        f"valid_pairs={data.num_valid_pairs}",
+        f"test_pairs={data.num_test_pairs}",
+        f"device={device.type}",
     )
 
     model = init_model(args, data.user_table, data.item_table, device)
