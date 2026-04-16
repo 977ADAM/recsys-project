@@ -25,7 +25,8 @@ dependencies = [
     "rich>=14.0.0",
     "streamlit>=1.56.0",
     "pytest>=9.0.3",
-    "torchrec>=1.1.0",
+    "pydantic-extra-types==2.11.2",
+    "torchmetrics>=1.9.0",
 ]
 
 [tool.setuptools]

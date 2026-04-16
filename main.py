@@ -66,6 +66,310 @@ class PairTensors:
         return int(self.user_indices.shape[0])
 
 
+@dataclass
+class FitResult:
+    history: list[dict[str, float]]
+    best_epoch: int
+    best_valid_recall_at_k: float
+    best_valid_users: int
+
+
+class BaseModel(nn.Module):
+    def __init__(self, temperature: float = 0.05) -> None:
+        super().__init__()
+        if temperature <= 0:
+            raise ValueError("temperature must be positive.")
+        self.temperature = float(temperature)
+        self._cached_user_embeddings: torch.Tensor | None = None
+        self._cached_item_embeddings: torch.Tensor | None = None
+
+    def _clear_eval_cache(self) -> None:
+        self._cached_user_embeddings = None
+        self._cached_item_embeddings = None
+
+    def _clone_state_dict(self) -> dict[str, torch.Tensor]:
+        return {
+            key: value.detach().cpu().clone()
+            for key, value in self.state_dict().items()
+        }
+
+    def encode_users(self, categorical: torch.Tensor, numerical: torch.Tensor) -> torch.Tensor:
+        raise NotImplementedError
+
+    def encode_items(self, categorical: torch.Tensor, numerical: torch.Tensor) -> torch.Tensor:
+        raise NotImplementedError
+
+    def forward(
+        self,
+        user_categorical: torch.Tensor,
+        user_numerical: torch.Tensor,
+        item_categorical: torch.Tensor,
+        item_numerical: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        user_embeddings = self.encode_users(user_categorical, user_numerical)
+        item_embeddings = self.encode_items(item_categorical, item_numerical)
+        logits = user_embeddings @ item_embeddings.T / self.temperature
+        return user_embeddings, item_embeddings, logits
+
+    def train_one_epoch(
+        self,
+        optimizer: torch.optim.Optimizer,
+        pairs: PairTensors,
+        user_table: EncodedTable,
+        item_table: EncodedTable,
+        batch_size: int,
+        device: torch.device,
+    ) -> float:
+        self.train()
+        self._clear_eval_cache()
+        total_loss = 0.0
+        total_batches = 0
+
+        for batch in iterate_minibatches(pairs.size, batch_size):
+            user_idx = pairs.user_indices[batch]
+            item_idx = pairs.item_indices[batch]
+            weights = pairs.weights[batch].to(device)
+
+            user_categorical = user_table.categorical[user_idx].to(device)
+            user_numerical = user_table.numerical[user_idx].to(device)
+            item_categorical = item_table.categorical[item_idx].to(device)
+            item_numerical = item_table.numerical[item_idx].to(device)
+
+            _, _, logits = self(
+                user_categorical,
+                user_numerical,
+                item_categorical,
+                item_numerical,
+            )
+            targets = torch.arange(logits.shape[0], device=device)
+
+            loss_users = F.cross_entropy(logits, targets, reduction="none")
+            loss_items = F.cross_entropy(logits.T, targets, reduction="none")
+            sample_weights = weights / weights.mean().clamp(min=1e-6)
+            loss = (((loss_users + loss_items) * 0.5) * sample_weights).mean()
+
+            optimizer.zero_grad(set_to_none=True)
+            loss.backward()
+            optimizer.step()
+
+            total_loss += float(loss.item())
+            total_batches += 1
+
+        return total_loss / max(total_batches, 1)
+
+    @torch.inference_mode()
+    def _encode_table(
+        self,
+        table: EncodedTable,
+        tower: str,
+        device: torch.device,
+        batch_size: int,
+    ) -> torch.Tensor:
+        encoded_batches: list[torch.Tensor] = []
+        effective_batch_size = max(int(batch_size), 1)
+        for start in range(0, len(table.ids), effective_batch_size):
+            stop = start + effective_batch_size
+            categorical = table.categorical[start:stop].to(device)
+            numerical = table.numerical[start:stop].to(device)
+            if tower == "user":
+                batch_embeddings = self.encode_users(categorical, numerical)
+            elif tower == "item":
+                batch_embeddings = self.encode_items(categorical, numerical)
+            else:
+                raise ValueError(f"Unknown tower '{tower}'. Expected 'user' or 'item'.")
+            encoded_batches.append(batch_embeddings.cpu())
+        return torch.cat(encoded_batches, dim=0)
+
+    @torch.inference_mode()
+    def before_evaluate(
+        self,
+        user_table: EncodedTable,
+        item_table: EncodedTable,
+        device: torch.device,
+        test_batch_size: int,
+    ) -> None:
+        self.eval()
+        self._cached_user_embeddings = self._encode_table(
+            table=user_table,
+            tower="user",
+            device=device,
+            batch_size=test_batch_size,
+        )
+        self._cached_item_embeddings = self._encode_table(
+            table=item_table,
+            tower="item",
+            device=device,
+            batch_size=test_batch_size,
+        )
+
+    @torch.inference_mode()
+    def predict(
+        self,
+        eval_users: torch.Tensor,
+        eval_pos: pd.DataFrame | None = None,
+        test_batch_size: int = 4096,
+        k: int = 100,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        del eval_pos
+        if self._cached_user_embeddings is None or self._cached_item_embeddings is None:
+            raise RuntimeError("Call before_evaluate() before predict().")
+
+        if not torch.is_tensor(eval_users):
+            eval_users = torch.tensor(list(eval_users), dtype=torch.long)
+
+        eval_users = eval_users.to(dtype=torch.long).cpu()
+        candidate_count = int(self._cached_item_embeddings.shape[0])
+        top_k = min(k, candidate_count)
+        if eval_users.numel() == 0:
+            empty_scores = torch.empty((0, top_k), dtype=torch.float32)
+            empty_indices = torch.empty((0, top_k), dtype=torch.long)
+            return empty_scores, empty_indices
+
+        effective_batch_size = max(int(test_batch_size), 1)
+        score_batches: list[torch.Tensor] = []
+        index_batches: list[torch.Tensor] = []
+        for start in range(0, eval_users.numel(), effective_batch_size):
+            batch_users = eval_users[start : start + effective_batch_size]
+            batch_user_embeddings = self._cached_user_embeddings.index_select(0, batch_users)
+            batch_scores, batch_top_indices = torch.topk(
+                batch_user_embeddings @ self._cached_item_embeddings.T,
+                k=top_k,
+                dim=1,
+            )
+            score_batches.append(batch_scores)
+            index_batches.append(batch_top_indices)
+
+        return torch.cat(score_batches, dim=0), torch.cat(index_batches, dim=0)
+
+    @torch.inference_mode()
+    def evaluate_recall_at_k(
+        self,
+        user_table: EncodedTable,
+        item_table: EncodedTable,
+        positives: pd.DataFrame,
+        k: int,
+        device: torch.device,
+        batch_size: int,
+    ) -> tuple[float, int]:
+        relevant_by_user: dict[int, set[int]] = {}
+        for pair in positives.itertuples():
+            user_row = user_table.id_to_row.get(str(pair.user_id))
+            item_row = item_table.id_to_row.get(str(pair.banner_id))
+            if user_row is None or item_row is None:
+                continue
+            relevant_by_user.setdefault(user_row, set()).add(item_row)
+
+        if not relevant_by_user:
+            return float("nan"), 0
+
+        self.before_evaluate(
+            user_table=user_table,
+            item_table=item_table,
+            device=device,
+            test_batch_size=batch_size,
+        )
+        relevant_user_rows = torch.tensor(sorted(relevant_by_user), dtype=torch.long)
+        batch_scores, batch_top_indices = self.predict(
+            eval_users=relevant_user_rows,
+            test_batch_size=batch_size,
+            k=k,
+        )
+
+        recall_sum = 0.0
+        for offset, user_row in enumerate(relevant_user_rows.tolist()):
+            relevant_items = relevant_by_user[user_row]
+            predicted_scores = batch_scores[offset].tolist()
+            predicted_items = batch_top_indices[offset].tolist()
+            hits = sum(
+                1
+                for score, item_idx in zip(predicted_scores, predicted_items)
+                if score > 0 and item_idx in relevant_items
+            )
+            recall_sum += hits / len(relevant_items)
+
+        return recall_sum / len(relevant_user_rows), len(relevant_user_rows)
+
+    def fit(
+        self,
+        args: argparse.Namespace,
+        train_pairs: PairTensors,
+        valid_pairs: pd.DataFrame,
+        user_table: EncodedTable,
+        item_table: EncodedTable,
+        device: torch.device,
+    ) -> FitResult:
+        optimizer = torch.optim.Adam(self.parameters(), lr=args.lr)
+        history: list[dict[str, float]] = []
+        best_state_dict = self._clone_state_dict()
+        best_epoch = 0
+        best_valid_recall = float("-inf")
+        best_valid_users = 0
+        epochs_without_improvement = 0
+        patience = max(int(args.patience), 0)
+
+        print("Training Two-Tower model...")
+        for epoch in range(1, args.epochs + 1):
+            train_loss = self.train_one_epoch(
+                optimizer=optimizer,
+                pairs=train_pairs,
+                user_table=user_table,
+                item_table=item_table,
+                batch_size=args.batch_size,
+                device=device,
+            )
+            valid_recall, valid_users = self.evaluate_recall_at_k(
+                user_table=user_table,
+                item_table=item_table,
+                positives=valid_pairs,
+                k=args.recall_k,
+                device=device,
+                batch_size=args.eval_batch_size,
+            )
+            history.append(
+                {
+                    "epoch": float(epoch),
+                    "train_loss": train_loss,
+                    "valid_recall_at_k": valid_recall,
+                }
+            )
+            print(
+                f"epoch={epoch:02d}",
+                f"train_loss={train_loss:.4f}",
+                f"valid_recall@{args.recall_k}={valid_recall:.4f}",
+                f"valid_users={valid_users}",
+            )
+
+            candidate_score = valid_recall if np.isfinite(valid_recall) else float("-inf")
+            improved = epoch == 1 or candidate_score > best_valid_recall
+            if improved:
+                best_state_dict = self._clone_state_dict()
+                best_epoch = epoch
+                best_valid_recall = candidate_score
+                best_valid_users = valid_users
+                epochs_without_improvement = 0
+            else:
+                epochs_without_improvement += 1
+
+            if patience and epochs_without_improvement >= patience:
+                print(f"Early stopping at epoch {epoch:02d} with patience={patience}")
+                break
+
+        self.load_state_dict(best_state_dict)
+        self._clear_eval_cache()
+        restored_recall = float("nan") if best_valid_recall == float("-inf") else best_valid_recall
+        print(
+            "Training done.",
+            f"best_epoch={best_epoch}",
+            f"best_valid_recall@{args.recall_k}={restored_recall:.4f}",
+            f"best_valid_users={best_valid_users}",
+        )
+        return FitResult(
+            history=history,
+            best_epoch=best_epoch,
+            best_valid_recall_at_k=restored_recall,
+            best_valid_users=best_valid_users,
+        )
+
 class Tower(nn.Module):
     def __init__(
         self,
@@ -95,7 +399,7 @@ class Tower(nn.Module):
         return F.normalize(self.network(tower_input), dim=1)
 
 
-class TwoTowerModel(nn.Module):
+class TwoTowerModel(BaseModel):
     def __init__(
         self,
         user_cardinalities: list[int],
@@ -105,8 +409,9 @@ class TwoTowerModel(nn.Module):
         embedding_dim: int,
         hidden_dim: int,
         output_dim: int,
+        temperature: float,
     ) -> None:
-        super().__init__()
+        super().__init__(temperature=temperature)
         self.user_tower = Tower(
             cardinalities=user_cardinalities,
             num_numeric_features=user_num_features,
@@ -129,24 +434,44 @@ class TwoTowerModel(nn.Module):
         return self.item_tower(categorical, numerical)
 
 
+def init_model(
+    args: argparse.Namespace,
+    user_table: EncodedTable,
+    item_table: EncodedTable,
+    device: torch.device,
+) -> TwoTowerModel:
+    print("Initializing Two-Tower model...")
+    model = TwoTowerModel(
+        user_cardinalities=user_table.cardinalities,
+        item_cardinalities=item_table.cardinalities,
+        user_num_features=int(user_table.numerical.shape[1]),
+        item_num_features=int(item_table.numerical.shape[1]),
+        embedding_dim=args.embedding_dim,
+        hidden_dim=args.hidden_dim,
+        output_dim=args.output_dim,
+        temperature=args.temperature,
+    ).to(device)
+    return model
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Train a minimal TwoTower retrieval model on data/raw."
     )
-    parser.add_argument("--data-dir", type=Path, default=Path("data/raw"))
-    parser.add_argument("--output", type=Path, default=Path("artifacts/twotower.pt"))
-    parser.add_argument("--epochs", type=int, default=8)
-    parser.add_argument("--batch-size", type=int, default=512)
-    parser.add_argument("--eval-batch-size", type=int, default=1024)
-    parser.add_argument("--embedding-dim", type=int, default=16)
-    parser.add_argument("--hidden-dim", type=int, default=64)
-    parser.add_argument("--output-dim", type=int, default=32)
-    parser.add_argument("--lr", type=float, default=1e-3)
-    parser.add_argument("--temperature", type=float, default=0.1)
-    parser.add_argument("--recall-k", type=int, default=10)
-    parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--train-end", type=str, default="2026-02-28")
-    parser.add_argument("--valid-end", type=str, default="2026-03-15")
+    parser.add_argument("--data-dir",        type=Path,  default=Path("data/raw"))
+    parser.add_argument("--output",          type=Path,  default=Path("artifacts/twotower.pt"))
+    parser.add_argument("--epochs",          type=int,   default=20)
+    parser.add_argument("--batch-size",      type=int,   default=1024)
+    parser.add_argument("--eval-batch-size", type=int,   default=4096)
+    parser.add_argument("--embedding-dim",   type=int,   default=16)
+    parser.add_argument("--hidden-dim",      type=int,   default=64)
+    parser.add_argument("--output-dim",      type=int,   default=32)
+    parser.add_argument("--lr",              type=float, default=1e-3)
+    parser.add_argument("--temperature",     type=float, default=0.05)
+    parser.add_argument("--recall-k",        type=int,   default=100)
+    parser.add_argument("--patience",        type=int,   default=0)
+    parser.add_argument("--seed",            type=int,   default=42)
+    parser.add_argument("--train-end",       type=str,   default="2026-02-28")
+    parser.add_argument("--valid-end",       type=str,   default="2026-03-15")
     parser.add_argument(
         "--device",
         type=str,
@@ -196,16 +521,15 @@ def split_interactions(
 
 
 def build_positive_pairs(interactions: pd.DataFrame) -> pd.DataFrame:
-    positives = interactions[interactions["clicks"] > 0].copy()
+    positives = interactions.loc[interactions["clicks"].gt(0),["user_id", "banner_id", "clicks"],]
+
     if positives.empty:
         raise ValueError("No positive interactions with clicks > 0 were found.")
-    pairs = (
-        positives.groupby(["user_id", "banner_id"], as_index=False)
-        .agg(clicks=("clicks", "sum"))
-        .sort_values(["user_id", "banner_id"])
-        .reset_index(drop=True)
-    )
-    pairs["weight"] = np.log1p(pairs["clicks"]).astype(np.float32)
+    
+    pairs = positives.groupby(["user_id", "banner_id"],as_index=False,sort=True,)["clicks"].sum()
+    
+    pairs["weight"] = np.log1p(pairs["clicks"].to_numpy()).astype(np.float32)
+
     return pairs
 
 
@@ -263,113 +587,12 @@ def pairs_to_tensors(
     )
 
 
-def iterate_minibatches(num_examples: int, batch_size: int) -> torch.Tensor:
+def iterate_minibatches(num_examples: int, batch_size: int):
     order = torch.randperm(num_examples)
     for start in range(0, num_examples, batch_size):
         batch = order[start : start + batch_size]
         if batch.numel() > 1:
             yield batch
-
-
-def train_one_epoch(
-    model: TwoTowerModel,
-    optimizer: torch.optim.Optimizer,
-    pairs: PairTensors,
-    user_table: EncodedTable,
-    item_table: EncodedTable,
-    batch_size: int,
-    temperature: float,
-    device: torch.device,
-) -> float:
-    model.train()
-    total_loss = 0.0
-    total_batches = 0
-
-    for batch in iterate_minibatches(pairs.size, batch_size):
-        user_idx = pairs.user_indices[batch]
-        item_idx = pairs.item_indices[batch]
-        weights = pairs.weights[batch].to(device)
-
-        user_categorical = user_table.categorical[user_idx].to(device)
-        user_numerical = user_table.numerical[user_idx].to(device)
-        item_categorical = item_table.categorical[item_idx].to(device)
-        item_numerical = item_table.numerical[item_idx].to(device)
-
-        user_embeddings = model.encode_users(user_categorical, user_numerical)
-        item_embeddings = model.encode_items(item_categorical, item_numerical)
-        logits = user_embeddings @ item_embeddings.T / temperature
-        targets = torch.arange(logits.shape[0], device=device)
-
-        loss_users = F.cross_entropy(logits, targets, reduction="none")
-        loss_items = F.cross_entropy(logits.T, targets, reduction="none")
-        sample_weights = weights / weights.mean().clamp(min=1e-6)
-        loss = (((loss_users + loss_items) * 0.5) * sample_weights).mean()
-
-        optimizer.zero_grad(set_to_none=True)
-        loss.backward()
-        optimizer.step()
-
-        total_loss += float(loss.item())
-        total_batches += 1
-
-    return total_loss / max(total_batches, 1)
-
-
-@torch.inference_mode()
-def encode_full_table(
-    model: TwoTowerModel,
-    table: EncodedTable,
-    tower: str,
-    device: torch.device,
-    batch_size: int,
-) -> torch.Tensor:
-    encoded_batches: list[torch.Tensor] = []
-    for start in range(0, len(table.ids), batch_size):
-        stop = start + batch_size
-        categorical = table.categorical[start:stop].to(device)
-        numerical = table.numerical[start:stop].to(device)
-        if tower == "user":
-            batch_embeddings = model.encode_users(categorical, numerical)
-        else:
-            batch_embeddings = model.encode_items(categorical, numerical)
-        encoded_batches.append(batch_embeddings.cpu())
-    return torch.cat(encoded_batches, dim=0)
-
-
-def evaluate_recall_at_k(
-    model: TwoTowerModel,
-    user_table: EncodedTable,
-    item_table: EncodedTable,
-    positives: pd.DataFrame,
-    k: int,
-    device: torch.device,
-    batch_size: int,
-) -> tuple[float, int]:
-    grouped = positives.groupby("user_id")["banner_id"].agg(lambda values: set(values)).to_dict()
-    if not grouped:
-        return float("nan"), 0
-
-    model.eval()
-    user_embeddings = encode_full_table(model, user_table, "user", device, batch_size)
-    item_embeddings = encode_full_table(model, item_table, "item", device, batch_size)
-
-    candidate_count = item_embeddings.shape[0]
-    top_k = min(k, candidate_count)
-    scores = user_embeddings @ item_embeddings.T
-    top_indices = torch.topk(scores, k=top_k, dim=1).indices
-    item_ids = item_table.ids
-
-    recalls: list[float] = []
-    for user_id, relevant_items in grouped.items():
-        user_row = user_table.id_to_row.get(str(user_id))
-        if user_row is None:
-            continue
-        predicted_items = {item_ids[idx] for idx in top_indices[user_row].tolist()}
-        recalls.append(len(predicted_items & relevant_items) / len(relevant_items))
-
-    if not recalls:
-        return float("nan"), 0
-    return float(np.mean(recalls)), len(recalls)
 
 
 def save_checkpoint(
@@ -427,16 +650,7 @@ def main() -> None:
     )
     train_tensors = pairs_to_tensors(train_pairs, user_table, item_table)
 
-    model = TwoTowerModel(
-        user_cardinalities=user_table.cardinalities,
-        item_cardinalities=item_table.cardinalities,
-        user_num_features=user_table.numerical.shape[1],
-        item_num_features=item_table.numerical.shape[1],
-        embedding_dim=args.embedding_dim,
-        hidden_dim=args.hidden_dim,
-        output_dim=args.output_dim,
-    ).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    model = init_model(args, user_table, item_table, device)
 
     print(
         "Loaded data:",
@@ -448,43 +662,16 @@ def main() -> None:
         f"device={device.type}",
     )
 
-    history: list[dict[str, float]] = []
-    for epoch in range(1, args.epochs + 1):
-        train_loss = train_one_epoch(
-            model=model,
-            optimizer=optimizer,
-            pairs=train_tensors,
-            user_table=user_table,
-            item_table=item_table,
-            batch_size=args.batch_size,
-            temperature=args.temperature,
-            device=device,
-        )
-        valid_recall, valid_users = evaluate_recall_at_k(
-            model=model,
-            user_table=user_table,
-            item_table=item_table,
-            positives=valid_pairs,
-            k=args.recall_k,
-            device=device,
-            batch_size=args.eval_batch_size,
-        )
-        history.append(
-            {
-                "epoch": float(epoch),
-                "train_loss": train_loss,
-                "valid_recall_at_k": valid_recall,
-            }
-        )
-        print(
-            f"epoch={epoch:02d}",
-            f"train_loss={train_loss:.4f}",
-            f"valid_recall@{args.recall_k}={valid_recall:.4f}",
-            f"valid_users={valid_users}",
-        )
+    fit_result = model.fit(
+        args=args,
+        train_pairs=train_tensors,
+        valid_pairs=valid_pairs,
+        user_table=user_table,
+        item_table=item_table,
+        device=device,
+    )
 
-    test_recall, test_users = evaluate_recall_at_k(
-        model=model,
+    test_recall, test_users = model.evaluate_recall_at_k(
         user_table=user_table,
         item_table=item_table,
         positives=test_pairs,
@@ -498,7 +685,8 @@ def main() -> None:
     )
 
     metrics = {
-        "valid_recall_at_k": history[-1]["valid_recall_at_k"] if history else float("nan"),
+        "best_epoch": float(fit_result.best_epoch),
+        "valid_recall_at_k": fit_result.best_valid_recall_at_k,
         "test_recall_at_k": test_recall,
     }
     save_checkpoint(
