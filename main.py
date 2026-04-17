@@ -3,7 +3,7 @@ import numpy as np
 import torch
 from src.config import TwoTowerConfig, parse_args
 from src.data import RecSysDataModule
-from src.twotower import TwoTower
+from twotower import TwoTower
 
 
 def set_seed(seed: int) -> None:
