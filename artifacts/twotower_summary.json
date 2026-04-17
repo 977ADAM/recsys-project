@@ -1,0 +1,54 @@
+{
+  "artifacts": {
+    "checkpoint_path": "artifacts/twotower.pt",
+    "summary_path": "artifacts/twotower_summary.json"
+  },
+  "config": {
+    "data_dir": "data/raw",
+    "output": "artifacts/twotower.pt",
+    "epochs": 1,
+    "batch_size": 1024,
+    "eval_batch_size": 4096,
+    "embedding_dim": 16,
+    "hidden_dim": 64,
+    "output_dim": 32,
+    "lr": 0.001,
+    "temperature": 0.05,
+    "recall_k": 100,
+    "patience": 0,
+    "seed": 42,
+    "train_end": "2026-02-28",
+    "valid_end": "2026-03-15",
+    "device": "cpu",
+    "num_workers": 0,
+    "pin_memory": false,
+    "drop_last_train": false,
+    "shuffle_train": true
+  },
+  "split_dates": {
+    "train_end": "2026-02-28",
+    "valid_end": "2026-03-15"
+  },
+  "dataset": {
+    "num_users": 5000,
+    "num_items": 3000,
+    "num_train_pairs": 114580,
+    "num_valid_pairs": 29220,
+    "num_test_pairs": 31530
+  },
+  "metrics": {
+    "best_epoch": 1,
+    "best_valid_recall_at_k": 0.03907695831424644,
+    "best_valid_users": 2183,
+    "test_recall_at_k": 0.04057891663016497,
+    "test_users": 2283
+  },
+  "history": [
+    {
+      "epoch": 1.0,
+      "train_loss": 7.007141837051937,
+      "valid_recall_at_k": 0.03907695831424644
+    }
+  ],
+  "device": "cpu"
+}

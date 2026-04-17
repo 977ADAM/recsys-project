@@ -57,6 +57,46 @@ class DataBundle:
     def num_test_pairs(self) -> int:
         return len(self.test_pairs)
 
+    def train_data(self) -> "TrainData":
+        return TrainData(
+            user_table=self.user_table,
+            item_table=self.item_table,
+            train_loader=self.train_loader,
+            train_pairs=self.train_pairs,
+        )
+
+    def valid_data(self) -> "EvalData":
+        return EvalData(
+            user_table=self.user_table,
+            item_table=self.item_table,
+            pairs=self.valid_pairs,
+            split_name="valid",
+        )
+
+    def test_data(self) -> "EvalData":
+        return EvalData(
+            user_table=self.user_table,
+            item_table=self.item_table,
+            pairs=self.test_pairs,
+            split_name="test",
+        )
+
+
+@dataclass
+class TrainData:
+    user_table: EncodedTable
+    item_table: EncodedTable
+    train_loader: DataLoader | None
+    train_pairs: pd.DataFrame | None
+
+
+@dataclass
+class EvalData:
+    user_table: EncodedTable
+    item_table: EncodedTable
+    pairs: pd.DataFrame
+    split_name: str = "eval"
+
 
 class PairDataset(Dataset):
     def __init__(self, pairs: PairTensors):

@@ -1,11 +1,10 @@
 import random
 import numpy as np
 import torch
-
+from src.config import TwoTowerConfig, parse_args
 from src.data import RecSysDataModule
-from src.checkpoint import save_checkpoint
-from src.model import init_model
-from src.config import parse_args
+from src.twotower import TwoTower
+
 
 def set_seed(seed: int) -> None:
     random.seed(seed)
@@ -14,12 +13,10 @@ def set_seed(seed: int) -> None:
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
 
-
 def main() -> None:
     args = parse_args()
+    config = TwoTowerConfig.from_namespace(args)
     set_seed(args.seed)
-    device = torch.device(args.device)
-
     data = RecSysDataModule(args).setup()
     print(
         "Loaded data:",
@@ -28,47 +25,26 @@ def main() -> None:
         f"train_pairs={data.num_train_pairs}",
         f"valid_pairs={data.num_valid_pairs}",
         f"test_pairs={data.num_test_pairs}",
-        f"device={device.type}",
+        f"device={args.device}",
     )
+    train_data = data.train_data()
+    valid_data = data.valid_data()
+    test_data = data.test_data()
 
-    model = init_model(args, data.user_table, data.item_table, device)
-
-    fit_result = model.fit(
-        args=args,
-        train_loader=data.train_loader,
-        valid_pairs=data.valid_pairs,
-        user_table=data.user_table,
-        item_table=data.item_table,
-        device=device,
-    )
-
-    test_recall, test_users = model.evaluate_recall_at_k(
-        user_table=data.user_table,
-        item_table=data.item_table,
-        positives=data.test_pairs,
-        k=args.recall_k,
-        device=device,
-        batch_size=args.eval_batch_size,
+    model = TwoTower(config=config)
+    model.fit(train_data, valid_data)
+    metrics = model.evaluate(test_data)
+    checkpoint_path = model.save_model(config.output)
+    summary_path = model.save_summary()
+    print(
+        f"test_recall@{config.recall_k}={metrics['test_recall_at_k']:.4f}",
+        f"test_users={int(metrics['test_users'])}",
     )
     print(
-        f"test_recall@{args.recall_k}={test_recall:.4f}",
-        f"test_users={test_users}",
+        "Artifacts saved:",
+        f"checkpoint={checkpoint_path}",
+        f"summary={summary_path}",
     )
-
-    metrics = {
-        "best_epoch": float(fit_result.best_epoch),
-        "valid_recall_at_k": fit_result.best_valid_recall_at_k,
-        "test_recall_at_k": test_recall,
-    }
-    save_checkpoint(
-        output_path=args.output,
-        model=model,
-        args=args,
-        metrics=metrics,
-        user_table=data.user_table,
-        item_table=data.item_table,
-    )
-    print(f"Saved checkpoint to {args.output}")
 
 
 if __name__ == "__main__":
